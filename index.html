@@ -73,16 +73,7 @@ body{font-family:'Manrope',-apple-system,BlinkMacSystemFont,sans-serif;backgroun
 .btn-google:hover{background:var(--surface3);border-color:var(--accent)}
 .google-icon{width:20px;height:20px;flex-shrink:0}
 
-.auth-divider{
-  display:flex;align-items:center;gap:10px;margin:16px 0;
-  font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;
-}
-.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
-
-/* Auth tabs */
-.auth-tabs{display:flex;background:var(--surface3);border-radius:var(--rxs);padding:3px;gap:2px;margin-bottom:18px}
-.auth-tab{flex:1;padding:7px;border:none;background:transparent;color:var(--text3);font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;border-radius:var(--rxs);font-family:inherit;transition:all .15s}
-.auth-tab.active{background:var(--surface2);color:var(--text)}
+.login-footer{font-size:11px;color:var(--text3);text-align:center;margin-top:18px;line-height:1.6}
 
 /* ══════════════════════════════════════════════════════════════════
    SHELL
@@ -505,7 +496,6 @@ hr{border:none;border-top:1px solid var(--border)}
 
     <div class="auth-err" id="auth-err"></div>
 
-    <!-- Google -->
     <button class="btn-google" onclick="loginGoogle()">
       <svg class="google-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -516,28 +506,7 @@ hr{border:none;border-top:1px solid var(--border)}
       Continuar con Google
     </button>
 
-    <div class="auth-divider">o</div>
-
-    <div class="auth-tabs">
-      <button class="auth-tab active" onclick="setAuthMode('login')">Iniciar sesión</button>
-      <button class="auth-tab" onclick="setAuthMode('register')">Crear cuenta</button>
-    </div>
-
-    <form id="auth-form">
-      <div class="fg">
-        <label>Correo electrónico</label>
-        <input type="email" id="auth-email" required placeholder="correo@ejemplo.com" autocomplete="email"/>
-      </div>
-      <div class="fg">
-        <label>Contraseña</label>
-        <input type="password" id="auth-pwd" required placeholder="••••••••" minlength="6"/>
-      </div>
-      <div class="fg" id="auth-confirm-wrap" style="display:none">
-        <label>Confirmar contraseña</label>
-        <input type="password" id="auth-confirm" placeholder="••••••••" minlength="6"/>
-      </div>
-      <button type="submit" class="btn btn-p btn-full" id="auth-btn">Entrar</button>
-    </form>
+    <div class="login-footer">Tus datos son privados y solo tú puedes verlos</div>
   </div>
 </div>
 
@@ -807,8 +776,6 @@ function effRating(kmL){
 function prevRecord(odo){ return records.filter(r=>r.odometer<odo).slice(-1)[0]||null; }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-let authMode = 'login';
-
 auth.onAuthStateChanged(async user => {
   if (user) {
     currentUser = user;
@@ -828,53 +795,20 @@ auth.onAuthStateChanged(async user => {
 });
 
 async function loginGoogle() {
-  clearAuthErr();
+  const errEl = document.getElementById('auth-err');
+  errEl.style.display = 'none';
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt:'select_account' });
   try { await auth.signInWithPopup(provider); }
-  catch(err) { showAuthErr(mapErr(err.code)); }
-}
-
-function setAuthMode(mode) {
-  authMode = mode;
-  const isReg = mode==='register';
-  document.querySelectorAll('.auth-tab').forEach((t,i)=>t.classList.toggle('active',(i===0&&!isReg)||(i===1&&isReg)));
-  document.getElementById('auth-btn').textContent = isReg ? 'Crear cuenta' : 'Entrar';
-  document.getElementById('auth-confirm-wrap').style.display = isReg ? '' : 'none';
-  document.getElementById('auth-confirm').required = isReg;
-  clearAuthErr();
-}
-
-document.getElementById('auth-form').addEventListener('submit', async e => {
-  e.preventDefault();
-  const email=document.getElementById('auth-email').value.trim();
-  const pwd=document.getElementById('auth-pwd').value;
-  const btn=document.getElementById('auth-btn');
-  if(authMode==='register'){
-    const c=document.getElementById('auth-confirm').value;
-    if(pwd!==c){ showAuthErr('Las contraseñas no coinciden'); return; }
+  catch(err) {
+    const msgs = {
+      'auth/popup-closed-by-user': 'Ventana cerrada. Intenta de nuevo.',
+      'auth/popup-blocked':        'El navegador bloqueó la ventana. Permite popups e intenta de nuevo.',
+      'auth/cancelled-popup-request': 'Operación cancelada.',
+    };
+    errEl.textContent = msgs[err.code] || 'Error al iniciar sesión con Google';
+    errEl.style.display = '';
   }
-  clearAuthErr(); btn.disabled=true; const orig=btn.textContent; btn.textContent='Cargando...';
-  try{
-    if(authMode==='login') await auth.signInWithEmailAndPassword(email,pwd);
-    else await auth.createUserWithEmailAndPassword(email,pwd);
-  }catch(err){ showAuthErr(mapErr(err.code)); btn.disabled=false; btn.textContent=orig; }
-});
-
-function showAuthErr(msg){ const el=document.getElementById('auth-err'); el.textContent=msg; el.style.display=''; }
-function clearAuthErr(){ document.getElementById('auth-err').style.display='none'; }
-function mapErr(code){
-  const m={
-    'auth/user-not-found':'Usuario no encontrado',
-    'auth/wrong-password':'Contraseña incorrecta',
-    'auth/invalid-credential':'Correo o contraseña incorrectos',
-    'auth/invalid-email':'Correo electrónico inválido',
-    'auth/email-already-in-use':'Este correo ya tiene una cuenta',
-    'auth/weak-password':'La contraseña debe tener mínimo 6 caracteres',
-    'auth/too-many-requests':'Demasiados intentos. Intenta más tarde',
-    'auth/popup-closed-by-user':'Ventana de Google cerrada',
-  };
-  return m[code]||'Error de autenticación';
 }
 async function doLogout(){ closeOverlay('cfg-modal'); await auth.signOut(); toast('Sesión cerrada'); }
 
