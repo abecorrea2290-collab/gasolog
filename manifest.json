@@ -1,0 +1,20 @@
+{
+  "name": "GasoLog - Control de Combustible",
+  "short_name": "GasoLog",
+  "description": "Registra y analiza el consumo de combustible de tu vehículo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#091413",
+  "theme_color": "#091413",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "lifestyle"],
+  "lang": "es"
+}
