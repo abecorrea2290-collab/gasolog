@@ -1,19 +1,14 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  GasoLog · Configuración de Firebase
-//  Reemplaza los valores con los de tu proyecto en Firebase Console:
-//  https://console.firebase.google.com → Configuración del proyecto → Tus apps
-// ─────────────────────────────────────────────────────────────────────────────
 const FIREBASE_CONFIG = {
-  apiKey:            "TU_API_KEY",
-  authDomain:        "TU_PROYECTO.firebaseapp.com",
-  projectId:         "TU_PROYECTO_ID",
-  storageBucket:     "TU_PROYECTO.appspot.com",
-  messagingSenderId: "TU_SENDER_ID",
-  appId:             "TU_APP_ID",
+  apiKey:            "AIzaSyAwdgOnjndks2PSgB5YRS8CZH5byHZ32S4",
+  authDomain:        "gasolog.firebaseapp.com",
+  projectId:         "gasolog",
+  storageBucket:     "gasolog.firebasestorage.app",
+  messagingSenderId: "719015795873",
+  appId:             "1:719015795873:web:630024c8d535872ad024e0",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Reglas de Firestore recomendadas (pega esto en Firebase Console → Firestore → Reglas):
+//  Reglas de Firestore (pega en Firebase Console → Firestore → Reglas):
 //
 //  rules_version = '2';
 //  service cloud.firestore {
@@ -23,8 +18,4 @@ const FIREBASE_CONFIG = {
 //      }
 //    }
 //  }
-//
-//  Servicios que debes activar en Firebase Console:
-//    1. Authentication → Método de inicio de sesión → Correo/Contraseña → Activar
-//    2. Firestore Database → Crear base de datos (modo producción)
 // ─────────────────────────────────────────────────────────────────────────────
