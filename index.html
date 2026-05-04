@@ -882,10 +882,16 @@ function updatePreview(){
     const km=odo-prev.odometer;
     const eff=calcEff(km,liters);
     if(eff){
-      const r=effRating(eff.kmL);
+      // Projected statistical average including this new fill-up
+      const withKm=records.filter(r=>r.kmDriven&&r.liters);
+      const newTotalKm=withKm.reduce((s,r)=>s+r.kmDriven,0)+km;
+      const newTotalL=withKm.reduce((s,r)=>s+r.liters,0)+liters;
+      const projStat=newTotalL>0?newTotalKm/newTotalL:null;
+      const r=effRating(projStat||eff.kmL);
       effLine='<span class="badge '+r.cls+'">'+r.emoji+' '+r.label+'</span> '
-        +fmt.n(eff.kmL)+' km/L &nbsp;·&nbsp; '+fmt.n(eff.galKm,4)+' gal/km &nbsp;·&nbsp; '
-        +km.toLocaleString()+' '+cfg.distUnit+' recorridos<br>';
+        +'Este tanqueo: <strong>'+fmt.n(eff.kmL)+' km/L</strong>'
+        +(projStat?' &nbsp;·&nbsp; Prom. estadístico: <strong>'+fmt.n(projStat)+' km/L</strong>':'')
+        +' &nbsp;·&nbsp; '+km.toLocaleString()+' '+cfg.distUnit+'<br>';
     }
   }
   document.getElementById('f-preview-body').innerHTML=effLine+'Total: <strong style="color:var(--text)">'+fmt.money(total)+'</strong> · '+fmt.n(liters,2)+' L';
@@ -953,39 +959,44 @@ function renderDashboard(){
     return;
   }
   const last=records[records.length-1];
-  const withEff=records.filter(r=>r.kmL);
-  const avgKmL=withEff.length?withEff.reduce((s,r)=>s+r.kmL,0)/withEff.length:null;
-  const bestKmL=withEff.length?Math.max(...withEff.map(r=>r.kmL)):null;
+  const withKm=records.filter(r=>r.kmDriven&&r.liters);
+  // Weighted statistical average: total km / total liters (more accurate than arithmetic mean)
+  const totalKmEff=withKm.reduce((s,r)=>s+r.kmDriven,0);
+  const totalLitersEff=withKm.reduce((s,r)=>s+r.liters,0);
+  const statKmL=withKm.length&&totalLitersEff>0?totalKmEff/totalLitersEff:null;
+  const statGalKm=statKmL?1/(statKmL*3.785411784):null;
+  const bestKmL=withKm.length?Math.max(...withKm.map(r=>r.kmL)):null;
   const totalCost=records.reduce((s,r)=>s+r.totalCost,0);
+  const totalLiters=records.reduce((s,r)=>s+r.liters,0);
   const totalKm=records.length>1?last.odometer-records[0].odometer:null;
-  const estRange=avgKmL?avgKmL*cfg.tankCap:null;
+  const estRange=statKmL?statKmL*cfg.tankCap:null;
   const estDays=estRange?Math.round(estRange/cfg.dailyKm):null;
-  const rating=last.kmL?effRating(last.kmL):{cls:'b-blue',label:'Pendiente',emoji:'⏳'};
+  const rating=statKmL?effRating(statKmL):{cls:'b-blue',label:'Pendiente',emoji:'⏳'};
 
-  // Efficiency bar
-  const effPct=last.kmL?Math.min(100,(last.kmL/20)*100):0;
-  const effColor=last.kmL>=14?'var(--accent)':last.kmL>=10?'var(--warning)':'var(--danger)';
+  // Efficiency bar based on statistical average
+  const effPct=statKmL?Math.min(100,(statKmL/20)*100):0;
+  const effColor=statKmL>=14?'var(--accent)':statKmL>=10?'var(--warning)':'var(--danger)';
 
   // Streak = total fill-ups
   const streak=records.length;
 
   // Insight
   let insightHtml='';
-  if(withEff.length>=2 && avgKmL){
+  if(withKm.length>=2 && statKmL){
     const lastEff=last.kmL;
-    if(lastEff && lastEff>avgKmL*1.05){
-      insightHtml='<div class="insight-card"><div class="insight-icon">⭐</div><div><div class="insight-title">Racha de Rendimiento</div><div class="insight-sub">Eficiencia '+fmt.n(((lastEff/avgKmL)-1)*100,0)+'% sobre tu promedio habitual</div></div></div>';
+    if(lastEff && lastEff>statKmL*1.05){
+      insightHtml='<div class="insight-card"><div class="insight-icon">⭐</div><div><div class="insight-title">Racha de Rendimiento</div><div class="insight-sub">Último tanqueo '+fmt.n(((lastEff/statKmL)-1)*100,0)+'% sobre tu promedio estadístico</div></div></div>';
     } else if(totalKm && totalKm>0){
       const costPerKm=totalCost/totalKm;
       insightHtml='<div class="insight-card"><div class="insight-icon">💡</div><div><div class="insight-title">Costo por km</div><div class="insight-sub">Gastas ~'+fmt.money(costPerKm)+' por km · Mensual est. '+fmt.money(costPerKm*cfg.dailyKm*30)+'</div></div></div>';
     }
   }
 
-  // Chips
+  // Chips — totales acumulados
   const chips=[
-    {icon:'🛣️',bg:'rgba(96,165,250,.15)',label:'Km recorridos',val:last.kmDriven?last.kmDriven.toLocaleString()+' '+cfg.distUnit:'—'},
-    {icon:'⛽',bg:'rgba(64,138,113,.15)',label:'Combustible',val:fmt.n(last.litersInput,1)+' '+last.fuelUnit},
-    {icon:'💰',bg:'rgba(251,191,36,.15)',label:'Costo total',val:fmt.money(last.totalCost)},
+    {icon:'🛣️',bg:'rgba(96,165,250,.15)',label:'Km totales',val:totalKm?totalKm.toLocaleString()+' '+cfg.distUnit:'—'},
+    {icon:'⛽',bg:'rgba(64,138,113,.15)',label:'Litros totales',val:fmt.n(totalLiters,1)+' L'},
+    {icon:'💰',bg:'rgba(251,191,36,.15)',label:'Gasto total',val:fmt.money(totalCost)},
     {icon:'📅',bg:'rgba(167,139,250,.15)',label:'Días estimados',val:estDays?estDays+' días':'—'},
   ];
 
@@ -996,7 +1007,8 @@ function renderDashboard(){
     ['Combustible',fmt.n(last.litersInput,2)+' '+last.fuelUnit+' ('+fmt.n(last.liters,2)+' L)'],
     [priceLabel,fmt.money(last.pricePerUnit)],
     ['Total',fmt.money(last.totalCost)],
-    ['Gal / km',last.galKm?fmt.n(last.galKm,4):'—'],
+    ['km/L último',last.kmL?fmt.n(last.kmL):' —'],
+    ['Gal / km est.',statGalKm?fmt.n(statGalKm,4):'—'],
     last.notes?['Notas',last.notes]:null,
   ].filter(Boolean);
 
@@ -1004,12 +1016,12 @@ function renderDashboard(){
     // HERO CARD
     '<div class="hero-card">'
       +'<div class="hero-header">'
-        +'<div class="hero-title">Último Tanqueo · '+fmt.rel(last.date)+'</div>'
+        +'<div class="hero-title">Rendimiento estadístico · '+withKm.length+' tanqueo'+(withKm.length!==1?'s':'')+'</div>'
         +'<div class="streak-badge">🔥 '+streak+' TANQUEO'+(streak>1?'S':'')+'</div>'
       +'</div>'
 
       +'<div class="hero-numbers">'
-        +'<span class="hero-big">'+(last.kmL?fmt.n(last.kmL):'—')+'</span>'
+        +'<span class="hero-big">'+(statKmL?fmt.n(statKmL):'—')+'</span>'
         +'<span class="hero-sep">/ 20</span>'
         +'<span class="hero-unit">km/L</span>'
       +'</div>'
@@ -1026,7 +1038,7 @@ function renderDashboard(){
       +insightHtml
 
       +'<div class="toggle-row">'
-        +'<div class="toggle-info"><div class="toggle-label">Detalles del tanqueo</div><div class="toggle-sub">'+fmt.date(last.date)+'</div></div>'
+        +'<div class="toggle-info"><div class="toggle-label">Último tanqueo · '+fmt.rel(last.date)+'</div><div class="toggle-sub">'+fmt.date(last.date)+'</div></div>'
         +'<span class="badge '+rating.cls+'">'+rating.emoji+' '+rating.label+'</span>'
       +'</div>'
     +'</div>'
@@ -1034,7 +1046,7 @@ function renderDashboard(){
     // SUMMARY STATS
     +'<div class="stat-grid">'
       +[
-        {lbl:'Promedio km/L',val:fmt.n(avgKmL),cls:'sc-green',vc:'green'},
+        {lbl:'km/L estadístico',val:statKmL?fmt.n(statKmL):'—',cls:'sc-green',vc:'green'},
         {lbl:'Mejor km/L',val:fmt.n(bestKmL),cls:'sc-green',vc:'green'},
         {lbl:'Gasto total',val:fmt.money(totalCost),cls:'sc-orange',vc:'orange'},
         {lbl:'Rango estimado',val:estRange?Math.round(estRange).toLocaleString()+' '+cfg.distUnit:'—',cls:'sc-blue',vc:'blue'},
