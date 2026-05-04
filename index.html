@@ -741,6 +741,7 @@ hr{border:none;border-top:1px solid var(--border)}
       <button class="btn btn-p btn-full" onclick="saveConfig()">Guardar configuración</button>
       <button class="btn btn-g btn-full" onclick="closeOverlay('cfg-modal')">Cancelar</button>
       <hr/>
+      <button class="btn btn-d btn-full" onclick="deleteAllData()">🗑️ Borrar todos los datos</button>
       <button class="btn btn-d btn-full" onclick="doLogout()">Cerrar sesión</button>
     </div>
   </div>
@@ -816,6 +817,7 @@ auth.onAuthStateChanged(async user => {
     document.getElementById('sb-user-email').textContent = user.email || user.displayName || 'Usuario';
     await loadConfig();
     subscribeRecords();
+    requestNotifPermission().then(checkExpiryNotifications);
   } else {
     currentUser = null;
     if (unsubRecs){ unsubRecs(); unsubRecs=null; }
@@ -841,6 +843,48 @@ async function loginGoogle() {
   }
 }
 async function doLogout(){ closeOverlay('cfg-modal'); await auth.signOut(); toast('Sesión cerrada'); }
+
+async function deleteAllData(){
+  if(!confirm('¿Eliminar TODOS los registros de tanqueo? Esta acción no se puede deshacer.')) return;
+  if(!confirm('⚠️ Confirma de nuevo: se borrarán todos tus datos permanentemente.')) return;
+  try{
+    const snap=await recsRef().get();
+    const batch=db.batch();
+    snap.docs.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+    closeOverlay('cfg-modal');
+    toast('Todos los datos eliminados');
+  }catch{ toast('Error al eliminar','err'); }
+}
+
+// ── Notificaciones ─────────────────────────────────────────────────────────
+async function requestNotifPermission(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='default') await Notification.requestPermission();
+}
+
+function checkExpiryNotifications(){
+  if(!('Notification' in window)||Notification.permission!=='granted') return;
+  const today=new Date().toISOString().slice(0,10);
+  if(localStorage.getItem('gasolog-notif-date')===today) return;
+  const t=cfg.tools||{};
+  const soatExp=t.soat?.purchaseDate?addDate(t.soat.purchaseDate,12,true):null;
+  const tecnoM=t.tecno?.vehicleYear?tecnoMonths(parseInt(t.tecno.vehicleYear)):12;
+  const tecnoExp=t.tecno?.lastRevDate&&tecnoM>0?addDate(t.tecno.lastRevDate,tecnoM):null;
+  const segExp=t.seguro?.startDate?addDate(t.seguro.startDate,parseInt(t.seguro.durationMonths||12)):null;
+  [{name:'SOAT',exp:soatExp},{name:'Tecnomecánica',exp:tecnoExp},{name:'Seguro Adicional',exp:segExp}]
+    .forEach(({name,exp})=>{
+      if(!exp) return;
+      const days=Math.ceil((new Date(exp)-new Date())/86400000);
+      if(days>=0&&days<=10){
+        new Notification(`⚠️ ${name} vence pronto`,{
+          body:`Faltan ${days} día${days!==1?'s':''} — vence el ${fmtDate(exp)}`,
+          icon:'/gasolog-icon.svg'
+        });
+      }
+    });
+  localStorage.setItem('gasolog-notif-date',today);
+}
 
 // ── Firestore ──────────────────────────────────────────────────────────────
 const userRef   = ()=>db.collection('users').doc(currentUser.uid);
@@ -1158,8 +1202,7 @@ function dashToolsWidget(){
     </div>`;
   }
 
-  return '<div class="sec" style="margin-top:12px"><div class="sec-hdr"><div class="sec-title">🗂️ Documentos y Mantenimiento</div>'
-    +'<button class="btn btn-g" style="font-size:11px;padding:4px 10px" onclick="showView(\'tools\')">Ver todo</button></div>'
+  return '<div class="sec" style="margin-top:12px"><div class="sec-hdr"><div class="sec-title">🗂️ Documentos y Mantenimiento</div></div>'
     +'<div class="sec-body">'
       +itemHtml('🛡️','SOAT',soatS,soatExp?`Vence: ${fmtDate(soatExp)}`:'')
       +itemHtml('🔧','Tecnomecánica',tecnoS,tecnoExempt?'Exento':tecnoExp?`Vence: ${fmtDate(tecnoExp)}`:'')
@@ -1377,25 +1420,46 @@ function tecnoMonths(vehicleYear){
 
 async function saveTool(type,data){
   if(!cfg.tools) cfg.tools={};
-  cfg.tools[type]={...((cfg.tools[type])||{}),...data};
-  try{ await configRef().set(cfg); renderTools(); toast('Guardado ✓'); }
-  catch{ toast('Error al guardar','err'); }
+  const prev=cfg.tools[type]||{};
+  const hist=[...(prev.history||[])];
+  // Archive current entry to history before overwriting
+  const {history:_,...prevData}=prev;
+  if(Object.keys(prevData).length) hist.unshift({...prevData,_saved:new Date().toISOString().slice(0,10)});
+  cfg.tools[type]={...data,history:hist};
+  try{
+    await configRef().set(cfg);
+    renderTools();
+    if(activeView==='dashboard') renderDashboard();
+    checkExpiryNotifications();
+    toast('Guardado ✓');
+  }catch{ toast('Error al guardar','err'); }
 }
 
-function toolCard({id,icon,bg,title,status,daysLine,dateLine,formHtml}){
+function toolCard({id,icon,bg,title,status,dateLine,formHtml,history=[]}){
   const s=toolStatus(status);
+  const clsMap={vigente:'b-green',proximo:'b-orange',vencido:'b-red',pendiente:'b-blue'};
   const daysHtml=s.days!==null
     ?`<div class="tool-days-row"><span class="tool-days-big ${s.cls}">${Math.abs(s.days)}</span><span class="tool-days-label">&nbsp;días ${s.days<0?'vencido':'restantes'}</span></div>`
     :`<div style="font-size:13px;color:var(--text3);margin:8px 0">Sin datos registrados</div>`;
+  const histHtml=history.length
+    ?`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Historial</div>
+        ${history.map(h=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
+          <span style="color:var(--text2)">${h._label||''}</span>
+          <span style="color:var(--text3)">${h._saved||''}</span>
+        </div>`).join('')}
+      </div>`
+    :'';
   return `<div class="tool-card">
     <div class="tool-card-hdr">
       <div class="tool-card-title"><div class="tool-card-icon" style="background:${bg}">${icon}</div>${title}</div>
-      <span class="badge ${s.cls==='vigente'?'b-green':s.cls==='proximo'?'b-orange':s.cls==='vencido'?'b-red':'b-blue'}">${s.label}</span>
+      <span class="badge ${clsMap[s.cls]||'b-blue'}">${s.label}</span>
     </div>
     ${daysHtml}
     <div class="tool-date-row">${dateLine}</div>
     <div class="tool-form" id="form-${id}">${formHtml}</div>
-    <button class="btn btn-g" style="width:100%;margin-top:4px" onclick="toggleToolForm('${id}')">✏️ Editar</button>
+    ${histHtml}
+    <button class="btn btn-g" style="width:100%;margin-top:8px" onclick="toggleToolForm('${id}')">✏️ Editar</button>
   </div>`;
 }
 
@@ -1412,11 +1476,12 @@ function renderTools(){
   // ── SOAT ──
   const soat=t.soat||{};
   const soatExpiry=soat.purchaseDate?addDate(soat.purchaseDate,12,true):null;
+  const soatHist=(soat.history||[]).map(h=>({...h,_label:`Compra: ${fmtDate(h.purchaseDate)} → Vence: ${fmtDate(h.purchaseDate?addDate(h.purchaseDate,12,true):null)}`}));
   const soatCard=toolCard({
     id:'soat',icon:'🛡️',bg:'rgba(96,165,250,.15)',title:'SOAT',
     status:soatExpiry,
-    daysLine:'',
     dateLine:`Compra: <b>${fmtDate(soat.purchaseDate)}</b> &nbsp;·&nbsp; Vence: <b>${fmtDate(soatExpiry)}</b>`,
+    history:soatHist,
     formHtml:`<div class="fg"><label>Fecha de compra</label><input type="date" id="t-soat-date" value="${soat.purchaseDate||''}"/></div>
       <div class="tool-btn-row">
         <button class="btn btn-p" onclick="saveTool('soat',{purchaseDate:document.getElementById('t-soat-date').value})">Guardar</button>
@@ -1429,13 +1494,18 @@ function renderTools(){
   const tecnoM=tecno.vehicleYear?tecnoMonths(parseInt(tecno.vehicleYear)):12;
   const tecnoExpiry=tecno.lastRevDate&&tecnoM>0?addDate(tecno.lastRevDate,tecnoM):null;
   const tecnoExempt=tecno.vehicleYear&&tecnoMonths(parseInt(tecno.vehicleYear))===0;
+  const tecnoHist=(tecno.history||[]).map(h=>{
+    const m=h.vehicleYear?tecnoMonths(parseInt(h.vehicleYear)):12;
+    const exp=h.lastRevDate&&m>0?addDate(h.lastRevDate,m):null;
+    return {...h,_label:`Revisión: ${fmtDate(h.lastRevDate)} → Vence: ${fmtDate(exp)} (${m===24?'2 años':'1 año'})`};
+  });
   const tecnoCard=toolCard({
     id:'tecno',icon:'🔧',bg:'rgba(167,139,250,.15)',title:'Tecnomecánica',
     status:tecnoExempt?'9999-12-31':tecnoExpiry,
-    daysLine:'',
     dateLine:tecnoExempt
       ?`Vehículo exento (≤2 años de antigüedad)`
       :`Última revisión: <b>${fmtDate(tecno.lastRevDate)}</b> &nbsp;·&nbsp; Vence: <b>${fmtDate(tecnoExpiry)}</b> &nbsp;·&nbsp; Ciclo: <b>${tecnoM===24?'2 años':'1 año'}</b>`,
+    history:tecnoHist,
     formHtml:`<div class="fg"><label>Año del modelo del vehículo</label><input type="number" id="t-tecno-year" min="1990" max="${new Date().getFullYear()}" placeholder="${new Date().getFullYear()-3}" value="${tecno.vehicleYear||''}"/></div>
       <div class="fg"><label>Fecha última revisión</label><input type="date" id="t-tecno-date" value="${tecno.lastRevDate||''}"/></div>
       <div class="tool-btn-row">
@@ -1447,11 +1517,15 @@ function renderTools(){
   // ── SEGURO ADICIONAL ──
   const seg=t.seguro||{};
   const segExpiry=seg.startDate?addDate(seg.startDate,parseInt(seg.durationMonths||12)):null;
+  const segHist=(seg.history||[]).map(h=>{
+    const exp=h.startDate?addDate(h.startDate,parseInt(h.durationMonths||12)):null;
+    return {...h,_label:`${fmtDate(h.startDate)} → ${fmtDate(exp)} (${h.durationMonths||12} meses)`};
+  });
   const segCard=toolCard({
     id:'seguro',icon:'📋',bg:'rgba(251,191,36,.15)',title:'Seguro Adicional',
     status:segExpiry,
-    daysLine:'',
     dateLine:`Inicio: <b>${fmtDate(seg.startDate)}</b> &nbsp;·&nbsp; Vence: <b>${fmtDate(segExpiry)}</b> &nbsp;·&nbsp; Duración: <b>${seg.durationMonths||12} meses</b>`,
+    history:segHist,
     formHtml:`<div class="fg"><label>Fecha inicio</label><input type="date" id="t-seg-date" value="${seg.startDate||''}"/></div>
       <div class="fg"><label>Duración (meses)</label><select id="t-seg-dur">
         ${[3,6,12,18,24,36].map(m=>`<option value="${m}"${parseInt(seg.durationMonths||12)===m?' selected':''}>${m} meses</option>`).join('')}
@@ -1466,18 +1540,18 @@ function renderTools(){
   const oil=t.aceite||{};
   const oilType=oil.oilType||'semisintetico';
   const oilKmInterval=OIL_TYPES[oilType].km;
-  const nextOilKm=oil.lastKm?(parseInt(oil.lastKm)+oilKmInterval):null;
+  const nextOilKm=oil.lastKm?parseInt(oil.lastKm)+oilKmInterval:null;
   const kmLeft=nextOilKm&&lastOdo?nextOilKm-lastOdo:null;
   const daysLeft=kmLeft!==null?Math.ceil(kmLeft/cfg.dailyKm):null;
   const oilExpiryStr=daysLeft!==null?new Date(Date.now()+daysLeft*86400000).toISOString().slice(0,10):null;
-  const oilDateLine=oil.lastKm
-    ?`Último cambio: <b>${oil.lastKm.toLocaleString()} ${cfg.distUnit}</b> &nbsp;·&nbsp; Próximo: <b>${nextOilKm?nextOilKm.toLocaleString()+' '+cfg.distUnit:'—'}</b><br>Aceite: <b>${OIL_TYPES[oilType].label}</b> &nbsp;·&nbsp; Intervalo: <b>${oilKmInterval.toLocaleString()} km</b>${lastOdo?` &nbsp;·&nbsp; Odómetro actual: <b>${lastOdo.toLocaleString()} km</b>`:''}`
-    :'Sin datos registrados';
+  const oilHist=(oil.history||[]).map(h=>({...h,_label:`Cambio en ${(h.lastKm||0).toLocaleString()} km · ${OIL_TYPES[h.oilType||'semisintetico']?.label||h.oilType}`}));
   const oilCard=toolCard({
     id:'aceite',icon:'🛢️',bg:'rgba(64,138,113,.15)',title:'Cambio de Aceite',
     status:oilExpiryStr,
-    daysLine:'',
-    dateLine:oilDateLine,
+    dateLine:oil.lastKm
+      ?`Último cambio: <b>${oil.lastKm.toLocaleString()} km</b> &nbsp;·&nbsp; Próximo: <b>${nextOilKm?nextOilKm.toLocaleString()+' km':'—'}</b><br>Aceite: <b>${OIL_TYPES[oilType].label}</b> &nbsp;·&nbsp; Intervalo: <b>${oilKmInterval.toLocaleString()} km</b>${lastOdo?` &nbsp;·&nbsp; Actual: <b>${lastOdo.toLocaleString()} km</b>`:''}`
+      :'Sin datos registrados',
+    history:oilHist,
     formHtml:`<div class="fg"><label>Tipo de aceite</label><select id="t-oil-type">
         ${Object.entries(OIL_TYPES).map(([k,v])=>`<option value="${k}"${oilType===k?' selected':''}>${v.label} (${v.km.toLocaleString()} km)</option>`).join('')}
       </select></div>
