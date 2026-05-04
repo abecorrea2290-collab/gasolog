@@ -663,7 +663,7 @@ hr{border:none;border-top:1px solid var(--border)}
       <div class="input-row" style="margin-bottom:12px">
         <div class="fg">
           <label>Combustible <span style="color:var(--danger)">*</span></label>
-          <input type="number" id="f-liters" required min="0.1" step="0.01" placeholder="40"/>
+          <input type="number" id="f-liters" required min="0.001" step="0.001" placeholder="40"/>
         </div>
         <div class="fg">
           <label>Unidad</label>
@@ -964,7 +964,7 @@ function updatePreview(){
         +' &nbsp;·&nbsp; '+km.toLocaleString()+' '+cfg.distUnit+'<br>';
     }
   }
-  document.getElementById('f-preview-body').innerHTML=effLine+'Total: <strong style="color:var(--text)">'+fmt.money(total)+'</strong> · '+fmt.n(liters,2)+' L';
+  document.getElementById('f-preview-body').innerHTML=effLine+'Total: <strong style="color:var(--text)">'+fmt.money(total)+'</strong> · '+fmt.n(liters,3)+' L';
   box.style.display='';
 }
 
@@ -1096,7 +1096,7 @@ function renderDashboard(){
   const priceLabel='Precio / '+last.fuelUnit;
   const details=[
     ['Odómetro',last.odometer.toLocaleString()+' '+cfg.distUnit],
-    ['Combustible',fmt.n(last.litersInput,2)+' '+last.fuelUnit+' ('+fmt.n(last.liters,2)+' L)'],
+    ['Combustible',fmt.n(last.litersInput,3)+' '+last.fuelUnit+' ('+fmt.n(last.liters,3)+' L)'],
     [priceLabel,fmt.money(last.pricePerUnit)],
     ['Total',fmt.money(last.totalCost)],
     ['km/L último',last.kmL?fmt.n(last.kmL):' —'],
@@ -1229,7 +1229,7 @@ function renderHistory(){
           +'<div class="record-date">'+fmt.rel(r.date)+' · '+fmt.date(r.date)+'</div>'
           +'<div class="record-odo">'+r.odometer.toLocaleString()+' '+cfg.distUnit
             +(r.kmDriven?' <span style="font-size:11px;color:var(--text3);font-weight:500">(+'+r.kmDriven.toLocaleString()+')</span>':'')+'</div>'
-          +'<div class="record-detail">'+fmt.n(r.litersInput,1)+' '+r.fuelUnit+' · '+fmt.money(r.totalCost)
+          +'<div class="record-detail">'+fmt.n(r.litersInput,3)+' '+r.fuelUnit+' · '+fmt.money(r.totalCost)
             +(r.fuelType?' · <span style="font-size:10px;font-weight:700;color:'+(FUEL_COLORS[r.fuelType]||'var(--accent)')+'">'+r.fuelType+'</span>':'')
             +(rt?' · <span class="badge '+rt.cls+'">'+rt.emoji+' '+rt.label+'</span>':'')+'</div>'
         +'</div>'
@@ -1322,7 +1322,7 @@ function renderStats(){
 function exportCSV(){
   if(!records.length){ toast('No hay datos','err'); return; }
   const headers=['Fecha','Odometro','Km Recorridos','Litros','Precio/Unidad','Total','km/L','Gal/km','Notas'];
-  const rows=records.map(r=>[fmt.date(r.date),r.odometer,r.kmDriven||'',fmt.n(r.liters,2),r.pricePerUnit,r.totalCost.toFixed(0),r.kmL?fmt.n(r.kmL):'',r.galKm?fmt.n(r.galKm,4):'',r.notes||''].join(','));
+  const rows=records.map(r=>[fmt.date(r.date),r.odometer,r.kmDriven||'',fmt.n(r.liters,3),r.pricePerUnit,r.totalCost.toFixed(0),r.kmL?fmt.n(r.kmL):'',r.galKm?fmt.n(r.galKm,4):'',r.notes||''].join(','));
   const blob=new Blob([[headers.join(','),...rows].join('\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download='gasolog_'+new Date().toISOString().split('T')[0]+'.csv';a.click();URL.revokeObjectURL(a.href);
