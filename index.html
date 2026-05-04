@@ -443,7 +443,7 @@ hr{border:none;border-top:1px solid var(--border)}
 .tool-days-big{font-size:38px;font-weight:900;line-height:1}
 .tool-days-label{font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:600}
 .tool-date-row{font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.7}
-.tool-form{display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;display:grid;gap:8px}
+.tool-form{display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;gap:8px}
 .tool-btn-row{display:flex;gap:8px;margin-top:4px}
 .vigente{color:var(--accent)}
 .proximo{color:var(--warning)}
@@ -1441,15 +1441,16 @@ function toolCard({id,icon,bg,title,status,dateLine,formHtml,history=[]}){
   const daysHtml=s.days!==null
     ?`<div class="tool-days-row"><span class="tool-days-big ${s.cls}">${Math.abs(s.days)}</span><span class="tool-days-label">&nbsp;días ${s.days<0?'vencido':'restantes'}</span></div>`
     :`<div style="font-size:13px;color:var(--text3);margin:8px 0">Sin datos registrados</div>`;
-  const histHtml=history.length
-    ?`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
-        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Historial</div>
-        ${history.map(h=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
-          <span style="color:var(--text2)">${h._label||''}</span>
-          <span style="color:var(--text3)">${h._saved||''}</span>
-        </div>`).join('')}
-      </div>`
-    :'';
+  const histHtml=`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Historial de compras</div>
+      ${history.length
+        ? history.map(h=>`<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;gap:8px">
+            <span style="color:var(--text2);flex:1">${h._label||''}</span>
+            <span style="color:var(--text3);white-space:nowrap">${h._saved||''}</span>
+          </div>`).join('')
+        : `<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">Sin historial — cada vez que guardes nuevos datos el registro anterior se archivará aquí</div>`
+      }
+    </div>`;
   return `<div class="tool-card">
     <div class="tool-card-hdr">
       <div class="tool-card-title"><div class="tool-card-icon" style="background:${bg}">${icon}</div>${title}</div>
