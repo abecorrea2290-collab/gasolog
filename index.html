@@ -1106,6 +1106,65 @@ function renderDashboard(){
       +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px">'
         +details.map(([k,v])=>'<div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px">'+k+'</div><div style="font-size:13px;font-weight:700">'+v+'</div></div>').join('')
       +'</div>'
+    +'</div></div>'
+
+    // DOCUMENTOS & MANTENIMIENTO
+    + dashToolsWidget();
+}
+
+function dashToolsWidget(){
+  const t=cfg.tools||{};
+  const lastOdo=records.length?records[records.length-1].odometer:null;
+
+  // SOAT
+  const soat=t.soat||{};
+  const soatExp=soat.purchaseDate?addDate(soat.purchaseDate,12,true):null;
+  const soatS=toolStatus(soatExp);
+
+  // Tecnomecánica
+  const tecno=t.tecno||{};
+  const tecnoM=tecno.vehicleYear?tecnoMonths(parseInt(tecno.vehicleYear)):12;
+  const tecnoExp=tecno.lastRevDate&&tecnoM>0?addDate(tecno.lastRevDate,tecnoM):null;
+  const tecnoExempt=tecno.vehicleYear&&tecnoM===0;
+  const tecnoS=tecnoExempt?{cls:'vigente',label:'Exento',days:null}:toolStatus(tecnoExp);
+
+  // Seguro
+  const seg=t.seguro||{};
+  const segExp=seg.startDate?addDate(seg.startDate,parseInt(seg.durationMonths||12)):null;
+  const segS=toolStatus(segExp);
+
+  // Aceite
+  const oil=t.aceite||{};
+  const oilType=oil.oilType||'semisintetico';
+  const nextOilKm=oil.lastKm?parseInt(oil.lastKm)+OIL_TYPES[oilType].km:null;
+  const kmLeft=nextOilKm&&lastOdo?nextOilKm-lastOdo:null;
+  const daysLeftOil=kmLeft!==null?Math.ceil(kmLeft/cfg.dailyKm):null;
+  const oilExp=daysLeftOil!==null?new Date(Date.now()+daysLeftOil*86400000).toISOString().slice(0,10):null;
+  const oilS=toolStatus(oilExp);
+  const oilKmText=nextOilKm?`Próximo: ${nextOilKm.toLocaleString()} km`:'Sin datos';
+
+  function itemHtml(icon,label,s,sub){
+    const clsMap={vigente:'b-green',proximo:'b-orange',vencido:'b-red',pendiente:'b-blue'};
+    const daysText=s.days!==null?(s.days<0?`Vencido hace ${Math.abs(s.days)}d`:`${s.days}d restantes`):'';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">${icon}</span>
+        <div>
+          <div style="font-size:13px;font-weight:700">${label}</div>
+          <div style="font-size:11px;color:var(--text3)">${sub||daysText||'Sin datos'}</div>
+        </div>
+      </div>
+      <span class="badge ${clsMap[s.cls]||'b-blue'}">${s.days!==null?daysText:s.label}</span>
+    </div>`;
+  }
+
+  return '<div class="sec" style="margin-top:12px"><div class="sec-hdr"><div class="sec-title">🗂️ Documentos y Mantenimiento</div>'
+    +'<button class="btn btn-g" style="font-size:11px;padding:4px 10px" onclick="showView(\'tools\')">Ver todo</button></div>'
+    +'<div class="sec-body">'
+      +itemHtml('🛡️','SOAT',soatS,soatExp?`Vence: ${fmtDate(soatExp)}`:'')
+      +itemHtml('🔧','Tecnomecánica',tecnoS,tecnoExempt?'Exento':tecnoExp?`Vence: ${fmtDate(tecnoExp)}`:'')
+      +itemHtml('📋','Seguro Adicional',segS,segExp?`Vence: ${fmtDate(segExp)}`:'')
+      +`<div style="border-bottom:none">`+itemHtml('🛢️','Cambio de Aceite',oilS,oilKmText)+'</div>'
     +'</div></div>';
 }
 
@@ -1307,7 +1366,7 @@ function toolStatus(expiryDateStr){
 
 function fmtDate(str){ if(!str) return '—'; const d=new Date(str+'T12:00:00'); return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}); }
 
-function addDate(dateStr,months){ const d=new Date(dateStr+'T12:00:00'); d.setMonth(d.getMonth()+months); return d.toISOString().slice(0,10); }
+function addDate(dateStr,months,subOneDayAfter=false){ const d=new Date(dateStr+'T12:00:00'); d.setMonth(d.getMonth()+months); if(subOneDayAfter) d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
 
 function tecnoMonths(vehicleYear){
   const age=new Date().getFullYear()-vehicleYear;
@@ -1352,7 +1411,7 @@ function renderTools(){
 
   // ── SOAT ──
   const soat=t.soat||{};
-  const soatExpiry=soat.purchaseDate?addDate(soat.purchaseDate,12):null;
+  const soatExpiry=soat.purchaseDate?addDate(soat.purchaseDate,12,true):null;
   const soatCard=toolCard({
     id:'soat',icon:'🛡️',bg:'rgba(96,165,250,.15)',title:'SOAT',
     status:soatExpiry,
