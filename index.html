@@ -969,11 +969,21 @@ function renderView(){
 }
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
 
+const EMPTY_ICON = `<svg width="96" height="96" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto 18px">
+  <path d="M256 80 C256 80 136 215 136 318 C136 388 190 438 256 438 C322 438 376 388 376 318 C376 215 256 80 256 80 Z" stroke="#2d6b55" stroke-width="22" stroke-linejoin="round"/>
+  <path d="M234 118 L256 80 L278 118" stroke="#2d6b55" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="162" y="320" width="44" height="88" rx="10" fill="#2d6b55" opacity="0.7"/>
+  <rect x="234" y="260" width="44" height="148" rx="10" fill="#2d6b55" opacity="0.7"/>
+  <rect x="306" y="288" width="44" height="120" rx="10" fill="#2d6b55" opacity="0.7"/>
+  <path d="M162 338 L220 275 L272 302 L352 224" stroke="#408A71" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M330 210 L358 220 L348 248" stroke="#408A71" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
 // ── Dashboard ──────────────────────────────────────────────────────────────
 function renderDashboard(){
   const el=document.getElementById('dash-body');
   if(!records.length){
-    el.innerHTML='<div class="empty"><img src="gasolog-icon.svg" width="88" height="88" style="display:block;margin:0 auto 16px;border-radius:20px;opacity:.7"/><p>Aún no hay registros.<br><strong>+ Tanqueo</strong> para comenzar.</p></div>';
+    el.innerHTML='<div class="empty">'+EMPTY_ICON+'<p>Aún no hay registros.<br><strong>+ Tanqueo</strong> para comenzar.</p></div>';
     return;
   }
   const last=records[records.length-1];
@@ -1083,7 +1093,7 @@ function renderDashboard(){
 function renderHistory(){
   const el=document.getElementById('hist-body');
   if(!records.length){
-    el.innerHTML='<div class="empty"><img src="gasolog-icon.svg" width="72" height="72" style="display:block;margin:0 auto 16px;border-radius:16px;opacity:.7"/><p>No hay registros aún.</p></div>';
+    el.innerHTML='<div class="empty">'+EMPTY_ICON+'<p>No hay registros aún.</p></div>';
     return;
   }
   const rev=[...records].reverse();
@@ -1125,7 +1135,7 @@ async function confirmDel(id){
 function renderStats(){
   const el=document.getElementById('stats-body');
   if(records.length<2){
-    el.innerHTML='<div class="empty"><img src="gasolog-icon.svg" width="72" height="72" style="display:block;margin:0 auto 16px;border-radius:16px;opacity:.7"/><p>Necesitas al menos <strong>2 tanqueos</strong> para ver estadísticas.</p></div>';
+    el.innerHTML='<div class="empty">'+EMPTY_ICON+'<p>Necesitas al menos <strong>2 tanqueos</strong> para ver estadísticas.</p></div>';
     return;
   }
   const withEff=records.filter(r=>r.kmL);
