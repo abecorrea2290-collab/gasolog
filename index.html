@@ -793,7 +793,6 @@ auth.onAuthStateChanged(async user => {
     currentUser = user;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-shell').classList.add('visible');
-    document.getElementById('bottom-nav').style.display = '';
     document.getElementById('sb-user-email').textContent = user.email || user.displayName || 'Usuario';
     await loadConfig();
     subscribeRecords();
@@ -802,7 +801,6 @@ auth.onAuthStateChanged(async user => {
     if (unsubRecs){ unsubRecs(); unsubRecs=null; }
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app-shell').classList.remove('visible');
-    document.getElementById('bottom-nav').style.display = 'none';
   }
 });
 
