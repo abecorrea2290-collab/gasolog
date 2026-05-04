@@ -432,6 +432,24 @@ hr{border:none;border-top:1px solid var(--border)}
 .switch input:checked+.switch-slider{background:var(--accent)}
 .switch input:checked+.switch-slider::before{transform:translateX(20px)}
 
+/* ── TOOLS ── */
+.tools-grid{display:grid;gap:12px}
+.tool-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px;transition:border-color .2s}
+.tool-card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.tool-card-title{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:800}
+.tool-card-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.tool-card-body{margin-top:12px}
+.tool-days-row{display:flex;align-items:flex-end;gap:6px;margin:8px 0}
+.tool-days-big{font-size:38px;font-weight:900;line-height:1}
+.tool-days-label{font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:600}
+.tool-date-row{font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.7}
+.tool-form{display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;display:grid;gap:8px}
+.tool-btn-row{display:flex;gap:8px;margin-top:4px}
+.vigente{color:var(--accent)}
+.proximo{color:var(--warning)}
+.vencido{color:var(--danger)}
+.pendiente{color:var(--text3)}
+
 /* ── CONFIG ROW ── */
 .cfg-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
 .cfg-row:last-child{border-bottom:none}
@@ -548,6 +566,10 @@ hr{border:none;border-top:1px solid var(--border)}
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/></svg>
         Estadísticas
       </button>
+      <button class="sb-item" data-view="tools">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.654-4.654m5.65-4.647 3.957-3.957a1.001 1.001 0 0 1 1.414 0l1.414 1.414a1 1 0 0 1 0 1.414l-3.957 3.957"/></svg>
+        Herramientas
+      </button>
     </div>
 
     <div class="sb-spacer"></div>
@@ -606,6 +628,7 @@ hr{border:none;border-top:1px solid var(--border)}
       <div class="view active" id="view-dashboard"><div id="dash-body"></div></div>
       <div class="view" id="view-history"><div id="hist-body"></div></div>
       <div class="view" id="view-stats"><div id="stats-body"></div></div>
+      <div class="view" id="view-tools"><div id="tools-body"></div></div>
     </div>
   </div>
 </div>
@@ -743,7 +766,7 @@ db.enablePersistence({ synchronizeTabs:true }).catch(() => {});
 let currentUser = null, records = [], unsubRecs = null;
 let activeView = 'dashboard', kmLChart = null, costChart = null;
 
-const DEFAULT_CFG = { vehicle:'Mi Vehículo', currency:'COP', distUnit:'km', tankCap:50, dailyKm:40, lastPrices:{} };
+const DEFAULT_CFG = { vehicle:'Mi Vehículo', currency:'COP', distUnit:'km', tankCap:50, dailyKm:40, lastPrices:{}, tools:{} };
 let cfg = { ...DEFAULT_CFG };
 
 const FUEL_COLORS = { Corriente:'var(--accent)', Extra:'var(--warning)', Diesel:'var(--info)', GNV:'var(--purple)' };
@@ -949,7 +972,7 @@ document.getElementById('add-form').addEventListener('submit',async e=>{
 });
 
 // ── Navigation ─────────────────────────────────────────────────────────────
-const VIEW_TITLES={dashboard:'Dashboard',history:'Historial',stats:'Estadísticas'};
+const VIEW_TITLES={dashboard:'Dashboard',history:'Historial',stats:'Estadísticas',tools:'Herramientas'};
 function showView(id){
   activeView=id;
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+id));
@@ -962,6 +985,7 @@ function renderView(){
   if(activeView==='dashboard') renderDashboard();
   else if(activeView==='history') renderHistory();
   else if(activeView==='stats') renderStats();
+  else if(activeView==='tools') renderTools();
 }
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
 
@@ -1269,6 +1293,144 @@ function closeSb(){
 
 window.addEventListener('online',()=>setSyncStatus('ok','Reconectado'));
 window.addEventListener('offline',()=>setSyncStatus('offline','Sin conexión'));
+
+// ── Tools ──────────────────────────────────────────────────────────────────
+const OIL_TYPES={mineral:{label:'Mineral',km:5000},semisintetico:{label:'Semisintético',km:7500},sintetico:{label:'Sintético',km:10000},sinteticoFull:{label:'Sintético Full',km:15000}};
+
+function toolStatus(expiryDateStr){
+  if(!expiryDateStr) return {cls:'pendiente',label:'Sin datos',days:null};
+  const days=Math.ceil((new Date(expiryDateStr)-new Date())/86400000);
+  if(days<0) return {cls:'vencido',label:'Vencido',days};
+  if(days<=30) return {cls:'proximo',label:'Próximo a vencer',days};
+  return {cls:'vigente',label:'Vigente',days};
+}
+
+function fmtDate(str){ if(!str) return '—'; const d=new Date(str+'T12:00:00'); return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}); }
+
+function addDate(dateStr,months){ const d=new Date(dateStr+'T12:00:00'); d.setMonth(d.getMonth()+months); return d.toISOString().slice(0,10); }
+
+function tecnoMonths(vehicleYear){
+  const age=new Date().getFullYear()-vehicleYear;
+  if(age<=2) return 0; // exempt
+  if(age<=5) return 24;
+  return 12;
+}
+
+async function saveTool(type,data){
+  if(!cfg.tools) cfg.tools={};
+  cfg.tools[type]={...((cfg.tools[type])||{}),...data};
+  try{ await configRef().set(cfg); renderTools(); toast('Guardado ✓'); }
+  catch{ toast('Error al guardar','err'); }
+}
+
+function toolCard({id,icon,bg,title,status,daysLine,dateLine,formHtml}){
+  const s=toolStatus(status);
+  const daysHtml=s.days!==null
+    ?`<div class="tool-days-row"><span class="tool-days-big ${s.cls}">${Math.abs(s.days)}</span><span class="tool-days-label">&nbsp;días ${s.days<0?'vencido':'restantes'}</span></div>`
+    :`<div style="font-size:13px;color:var(--text3);margin:8px 0">Sin datos registrados</div>`;
+  return `<div class="tool-card">
+    <div class="tool-card-hdr">
+      <div class="tool-card-title"><div class="tool-card-icon" style="background:${bg}">${icon}</div>${title}</div>
+      <span class="badge ${s.cls==='vigente'?'b-green':s.cls==='proximo'?'b-orange':s.cls==='vencido'?'b-red':'b-blue'}">${s.label}</span>
+    </div>
+    ${daysHtml}
+    <div class="tool-date-row">${dateLine}</div>
+    <div class="tool-form" id="form-${id}">${formHtml}</div>
+    <button class="btn btn-g" style="width:100%;margin-top:4px" onclick="toggleToolForm('${id}')">✏️ Editar</button>
+  </div>`;
+}
+
+function toggleToolForm(id){
+  const f=document.getElementById('form-'+id);
+  f.style.display=f.style.display==='grid'?'none':'grid';
+}
+
+function renderTools(){
+  const el=document.getElementById('tools-body');
+  const t=cfg.tools||{};
+  const lastOdo=records.length?records[records.length-1].odometer:null;
+
+  // ── SOAT ──
+  const soat=t.soat||{};
+  const soatExpiry=soat.purchaseDate?addDate(soat.purchaseDate,12):null;
+  const soatCard=toolCard({
+    id:'soat',icon:'🛡️',bg:'rgba(96,165,250,.15)',title:'SOAT',
+    status:soatExpiry,
+    daysLine:'',
+    dateLine:`Compra: <b>${fmtDate(soat.purchaseDate)}</b> &nbsp;·&nbsp; Vence: <b>${fmtDate(soatExpiry)}</b>`,
+    formHtml:`<div class="fg"><label>Fecha de compra</label><input type="date" id="t-soat-date" value="${soat.purchaseDate||''}"/></div>
+      <div class="tool-btn-row">
+        <button class="btn btn-p" onclick="saveTool('soat',{purchaseDate:document.getElementById('t-soat-date').value})">Guardar</button>
+        <button class="btn btn-g" onclick="toggleToolForm('soat')">Cancelar</button>
+      </div>`
+  });
+
+  // ── TECNOMECÁNICA ──
+  const tecno=t.tecno||{};
+  const tecnoM=tecno.vehicleYear?tecnoMonths(parseInt(tecno.vehicleYear)):12;
+  const tecnoExpiry=tecno.lastRevDate&&tecnoM>0?addDate(tecno.lastRevDate,tecnoM):null;
+  const tecnoExempt=tecno.vehicleYear&&tecnoMonths(parseInt(tecno.vehicleYear))===0;
+  const tecnoCard=toolCard({
+    id:'tecno',icon:'🔧',bg:'rgba(167,139,250,.15)',title:'Tecnomecánica',
+    status:tecnoExempt?'9999-12-31':tecnoExpiry,
+    daysLine:'',
+    dateLine:tecnoExempt
+      ?`Vehículo exento (≤2 años de antigüedad)`
+      :`Última revisión: <b>${fmtDate(tecno.lastRevDate)}</b> &nbsp;·&nbsp; Vence: <b>${fmtDate(tecnoExpiry)}</b> &nbsp;·&nbsp; Ciclo: <b>${tecnoM===24?'2 años':'1 año'}</b>`,
+    formHtml:`<div class="fg"><label>Año del modelo del vehículo</label><input type="number" id="t-tecno-year" min="1990" max="${new Date().getFullYear()}" placeholder="${new Date().getFullYear()-3}" value="${tecno.vehicleYear||''}"/></div>
+      <div class="fg"><label>Fecha última revisión</label><input type="date" id="t-tecno-date" value="${tecno.lastRevDate||''}"/></div>
+      <div class="tool-btn-row">
+        <button class="btn btn-p" onclick="saveTool('tecno',{vehicleYear:document.getElementById('t-tecno-year').value,lastRevDate:document.getElementById('t-tecno-date').value})">Guardar</button>
+        <button class="btn btn-g" onclick="toggleToolForm('tecno')">Cancelar</button>
+      </div>`
+  });
+
+  // ── SEGURO ADICIONAL ──
+  const seg=t.seguro||{};
+  const segExpiry=seg.startDate?addDate(seg.startDate,parseInt(seg.durationMonths||12)):null;
+  const segCard=toolCard({
+    id:'seguro',icon:'📋',bg:'rgba(251,191,36,.15)',title:'Seguro Adicional',
+    status:segExpiry,
+    daysLine:'',
+    dateLine:`Inicio: <b>${fmtDate(seg.startDate)}</b> &nbsp;·&nbsp; Vence: <b>${fmtDate(segExpiry)}</b> &nbsp;·&nbsp; Duración: <b>${seg.durationMonths||12} meses</b>`,
+    formHtml:`<div class="fg"><label>Fecha inicio</label><input type="date" id="t-seg-date" value="${seg.startDate||''}"/></div>
+      <div class="fg"><label>Duración (meses)</label><select id="t-seg-dur">
+        ${[3,6,12,18,24,36].map(m=>`<option value="${m}"${parseInt(seg.durationMonths||12)===m?' selected':''}>${m} meses</option>`).join('')}
+      </select></div>
+      <div class="tool-btn-row">
+        <button class="btn btn-p" onclick="saveTool('seguro',{startDate:document.getElementById('t-seg-date').value,durationMonths:document.getElementById('t-seg-dur').value})">Guardar</button>
+        <button class="btn btn-g" onclick="toggleToolForm('seguro')">Cancelar</button>
+      </div>`
+  });
+
+  // ── CAMBIO DE ACEITE ──
+  const oil=t.aceite||{};
+  const oilType=oil.oilType||'semisintetico';
+  const oilKmInterval=OIL_TYPES[oilType].km;
+  const nextOilKm=oil.lastKm?(parseInt(oil.lastKm)+oilKmInterval):null;
+  const kmLeft=nextOilKm&&lastOdo?nextOilKm-lastOdo:null;
+  const daysLeft=kmLeft!==null?Math.ceil(kmLeft/cfg.dailyKm):null;
+  const oilExpiryStr=daysLeft!==null?new Date(Date.now()+daysLeft*86400000).toISOString().slice(0,10):null;
+  const oilDateLine=oil.lastKm
+    ?`Último cambio: <b>${oil.lastKm.toLocaleString()} ${cfg.distUnit}</b> &nbsp;·&nbsp; Próximo: <b>${nextOilKm?nextOilKm.toLocaleString()+' '+cfg.distUnit:'—'}</b><br>Aceite: <b>${OIL_TYPES[oilType].label}</b> &nbsp;·&nbsp; Intervalo: <b>${oilKmInterval.toLocaleString()} km</b>${lastOdo?` &nbsp;·&nbsp; Odómetro actual: <b>${lastOdo.toLocaleString()} km</b>`:''}`
+    :'Sin datos registrados';
+  const oilCard=toolCard({
+    id:'aceite',icon:'🛢️',bg:'rgba(64,138,113,.15)',title:'Cambio de Aceite',
+    status:oilExpiryStr,
+    daysLine:'',
+    dateLine:oilDateLine,
+    formHtml:`<div class="fg"><label>Tipo de aceite</label><select id="t-oil-type">
+        ${Object.entries(OIL_TYPES).map(([k,v])=>`<option value="${k}"${oilType===k?' selected':''}>${v.label} (${v.km.toLocaleString()} km)</option>`).join('')}
+      </select></div>
+      <div class="fg"><label>Km del último cambio</label><input type="number" id="t-oil-km" min="0" step="100" placeholder="${lastOdo||'45000'}" value="${oil.lastKm||''}"/></div>
+      <div class="tool-btn-row">
+        <button class="btn btn-p" onclick="saveTool('aceite',{oilType:document.getElementById('t-oil-type').value,lastKm:parseInt(document.getElementById('t-oil-km').value)})">Guardar</button>
+        <button class="btn btn-g" onclick="toggleToolForm('aceite')">Cancelar</button>
+      </div>`
+  });
+
+  el.innerHTML=`<div class="tools-grid">${soatCard}${tecnoCard}${segCard}${oilCard}</div>`;
+}
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
 
