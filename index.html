@@ -1003,7 +1003,7 @@ const EMPTY_ICON = `<svg width="96" height="96" viewBox="0 0 512 512" fill="none
 function renderDashboard(){
   const el=document.getElementById('dash-body');
   if(!records.length){
-    el.innerHTML='<div class="empty">'+EMPTY_ICON+'<p>Aún no hay registros.<br><strong>+ Tanqueo</strong> para comenzar.</p></div>';
+    el.innerHTML='<div class="empty">'+EMPTY_ICON+'<p>Aún no hay registros.<br><strong>+ Tanqueo</strong> para comenzar.</p></div>'+dashToolsWidget();
     return;
   }
   const last=records[records.length-1];
