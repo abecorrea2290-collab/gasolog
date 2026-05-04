@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="GasoLog">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <title>GasoLog</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
@@ -485,10 +486,16 @@ hr{border:none;border-top:1px solid var(--border)}
 <div id="login-screen">
   <div class="login-card">
     <div class="login-logo">
-      <svg width="38" height="38" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path d="M3 10h11M9 21V3m0 0L5 7m4-4 4 4"/>
-        <path d="M17 14c0 2.8 2 5 4.5 5"/><path d="M21.5 9C19 9 17 11.2 17 14s2 5 4.5 5"/>
-        <circle cx="17" cy="14" r="1.2" fill="currentColor"/>
+      <svg width="44" height="44" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5DD879"/><stop offset="1" stop-color="#1B9C3B"/></linearGradient></defs>
+        <rect width="512" height="512" rx="108" fill="url(#lg)"/>
+        <path d="M256 80 C256 80 136 215 136 318 C136 388 190 438 256 438 C322 438 376 388 376 318 C376 215 256 80 256 80 Z" fill="none" stroke="white" stroke-width="22" stroke-linejoin="round"/>
+        <path d="M234 118 L256 80 L278 118" fill="none" stroke="white" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="162" y="320" width="44" height="88" rx="10" fill="white" opacity="0.9"/>
+        <rect x="234" y="260" width="44" height="148" rx="10" fill="white" opacity="0.9"/>
+        <rect x="306" y="288" width="44" height="120" rx="10" fill="white" opacity="0.9"/>
+        <path d="M162 338 L220 275 L272 302 L352 224" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M330 210 L358 220 L348 248" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span class="login-app-name">GasoLog</span>
     </div>
@@ -519,10 +526,16 @@ hr{border:none;border-top:1px solid var(--border)}
   <!-- Sidebar -->
   <nav class="sb" id="sidebar">
     <div class="sb-logo">
-      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path d="M3 10h11M9 21V3m0 0L5 7m4-4 4 4"/>
-        <path d="M17 14c0 2.8 2 5 4.5 5"/><path d="M21.5 9C19 9 17 11.2 17 14s2 5 4.5 5"/>
-        <circle cx="17" cy="14" r="1.2" fill="currentColor"/>
+      <svg width="28" height="28" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="slg" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5DD879"/><stop offset="1" stop-color="#1B9C3B"/></linearGradient></defs>
+        <rect width="512" height="512" rx="108" fill="url(#slg)"/>
+        <path d="M256 80 C256 80 136 215 136 318 C136 388 190 438 256 438 C322 438 376 388 376 318 C376 215 256 80 256 80 Z" fill="none" stroke="white" stroke-width="22" stroke-linejoin="round"/>
+        <path d="M234 118 L256 80 L278 118" fill="none" stroke="white" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="162" y="320" width="44" height="88" rx="10" fill="white" opacity="0.9"/>
+        <rect x="234" y="260" width="44" height="148" rx="10" fill="white" opacity="0.9"/>
+        <rect x="306" y="288" width="44" height="120" rx="10" fill="white" opacity="0.9"/>
+        <path d="M162 338 L220 275 L272 302 L352 224" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M330 210 L358 220 L348 248" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span class="sb-logo-name">GasoLog</span>
     </div>
@@ -635,6 +648,21 @@ hr{border:none;border-top:1px solid var(--border)}
     <div class="modal-drag"></div>
     <h3>⛽ Registrar Tanqueo</h3>
     <form id="add-form">
+      <div class="input-row" style="margin-bottom:12px">
+        <div class="fg">
+          <label>Fecha y hora <span style="color:var(--danger)">*</span></label>
+          <input type="datetime-local" id="f-date" required/>
+        </div>
+        <div class="fg">
+          <label>Tipo de gasolina <span style="color:var(--danger)">*</span></label>
+          <select id="f-fuel-type">
+            <option value="Corriente">Corriente</option>
+            <option value="Extra">Extra</option>
+            <option value="Diesel">Diesel / ACPM</option>
+            <option value="GNV">Gas Natural (GNV)</option>
+          </select>
+        </div>
+      </div>
       <div class="fg">
         <label>Odómetro actual <span style="color:var(--danger)">*</span></label>
         <input type="number" id="f-odo" required min="0" step="1" placeholder="Ej: 45000"/>
@@ -656,6 +684,7 @@ hr{border:none;border-top:1px solid var(--border)}
       <div class="fg">
         <label>Precio por unidad <span style="color:var(--danger)">*</span></label>
         <input type="number" id="f-price" required min="0" step="1" placeholder="Ej: 15000"/>
+        <div class="fg-hint" id="f-price-hint"></div>
       </div>
       <div class="fg">
         <label>Notas (opcional)</label>
@@ -712,6 +741,10 @@ hr{border:none;border-top:1px solid var(--border)}
         <div class="fg-hint">Para estimar duración</div>
       </div>
     </div>
+    <div id="price-history-section" style="margin-bottom:16px">
+      <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Historial de precios</div>
+      <div id="price-history-body" style="display:grid;gap:6px"></div>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-p btn-full" onclick="saveConfig()">Guardar configuración</button>
       <button class="btn btn-g btn-full" onclick="closeOverlay('cfg-modal')">Cancelar</button>
@@ -740,8 +773,10 @@ db.enablePersistence({ synchronizeTabs:true }).catch(() => {});
 let currentUser = null, records = [], unsubRecs = null;
 let activeView = 'dashboard', kmLChart = null, costChart = null;
 
-const DEFAULT_CFG = { vehicle:'Mi Vehículo', currency:'COP', distUnit:'km', tankCap:50, dailyKm:40 };
+const DEFAULT_CFG = { vehicle:'Mi Vehículo', currency:'COP', distUnit:'km', tankCap:50, dailyKm:40, lastPrices:{} };
 let cfg = { ...DEFAULT_CFG };
+
+const FUEL_COLORS = { Corriente:'var(--accent)', Extra:'var(--warning)', Diesel:'var(--info)', GNV:'var(--purple)' };
 
 // ── Format ─────────────────────────────────────────────────────────────────
 const fmt = {
@@ -902,16 +937,19 @@ document.getElementById('f-odo').addEventListener('focus',function(){
   const last=records.slice(-1)[0];
   if(last) document.getElementById('f-odo-hint').textContent='Último: '+last.odometer.toLocaleString()+' '+cfg.distUnit;
 });
+document.getElementById('f-fuel-type').addEventListener('change', loadPriceForFuelType);
 
 document.getElementById('add-form').addEventListener('submit',async e=>{
   e.preventDefault();
+  const dateVal=document.getElementById('f-date').value;
+  const fuelType=document.getElementById('f-fuel-type').value;
   const odo=parseFloat(document.getElementById('f-odo').value);
   const lr=parseFloat(document.getElementById('f-liters').value);
   const price=parseFloat(document.getElementById('f-price').value);
   const unit=document.getElementById('f-unit').value;
   const notes=document.getElementById('f-notes').value.trim();
   const btn=document.getElementById('add-btn');
-  if(isNaN(odo)||isNaN(lr)||isNaN(price)){ toast('Completa todos los campos','err'); return; }
+  if(!dateVal||isNaN(odo)||isNaN(lr)||isNaN(price)){ toast('Completa todos los campos','err'); return; }
   const maxOdo=records.length?Math.max(...records.map(r=>r.odometer)):-Infinity;
   if(odo<=maxOdo){ toast('El odómetro debe ser mayor a '+maxOdo.toLocaleString()+' '+cfg.distUnit,'err'); return; }
   const liters=unit==='gal'?gal2L(lr):lr;
@@ -919,16 +957,24 @@ document.getElementById('add-form').addEventListener('submit',async e=>{
   const prev=prevRecord(odo);
   let kmDriven=null,kmL=null,galKm=null;
   if(prev){ kmDriven=odo-prev.odometer; const eff=calcEff(kmDriven,liters); if(eff){kmL=eff.kmL;galKm=eff.galKm;} }
+  const recordDate=firebase.firestore.Timestamp.fromDate(new Date(dateVal));
   btn.disabled=true;
   try{
     await addRecord({
-      date:firebase.firestore.Timestamp.now(),
+      date:recordDate,
+      fuelType,
       odometer:odo,liters,litersInput:lr,fuelUnit:unit,
       pricePerUnit:price,totalCost:total,notes,kmDriven,kmL,galKm,
     });
+    // Update last known price for this fuel type
+    const lp={...(cfg.lastPrices||{})};
+    lp[fuelType]={price, ts:Math.floor(Date.now()/1000)};
+    cfg.lastPrices=lp;
+    configRef().set(cfg).catch(()=>{});
     document.getElementById('add-form').reset();
     document.getElementById('f-preview').style.display='none';
     document.getElementById('f-odo-hint').textContent='';
+    document.getElementById('f-price-hint').textContent='';
     closeOverlay('add-modal'); toast('¡Tanqueo registrado! 🎉'); showView('dashboard');
   }catch{ toast('Error al guardar','err'); }
   finally{ btn.disabled=false; }
@@ -1080,6 +1126,7 @@ function renderHistory(){
           +'<div class="record-odo">'+r.odometer.toLocaleString()+' '+cfg.distUnit
             +(r.kmDriven?' <span style="font-size:11px;color:var(--text3);font-weight:500">(+'+r.kmDriven.toLocaleString()+')</span>':'')+'</div>'
           +'<div class="record-detail">'+fmt.n(r.litersInput,1)+' '+r.fuelUnit+' · '+fmt.money(r.totalCost)
+            +(r.fuelType?' · <span style="font-size:10px;font-weight:700;color:'+(FUEL_COLORS[r.fuelType]||'var(--accent)')+'">'+r.fuelType+'</span>':'')
             +(rt?' · <span class="badge '+rt.cls+'">'+rt.emoji+' '+rt.label+'</span>':'')+'</div>'
         +'</div>'
         +'<div class="record-actions">'
@@ -1190,9 +1237,46 @@ function toast(msg,type){
   const el=document.createElement('div'); el.className='toast'+(type?' '+type:''); el.textContent=msg;
   document.body.appendChild(el); toastTimer=setTimeout(()=>el.remove(),3000);
 }
-function openOverlay(id){ document.getElementById(id).classList.add('open'); }
+function openOverlay(id){
+  document.getElementById(id).classList.add('open');
+  if(id==='add-modal'){
+    // Auto-fill current datetime
+    const now=new Date();
+    const pad=n=>String(n).padStart(2,'0');
+    const local=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    document.getElementById('f-date').value=local;
+    // Auto-fill price from last known price for selected fuel type
+    loadPriceForFuelType();
+  }
+  if(id==='cfg-modal') renderPriceHistory();
+}
 function closeOverlay(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+function loadPriceForFuelType(){
+  const type=document.getElementById('f-fuel-type').value;
+  const priceInput=document.getElementById('f-price');
+  const hint=document.getElementById('f-price-hint');
+  const last=(cfg.lastPrices||{})[type];
+  if(last){
+    priceInput.value=last.price;
+    hint.textContent='Último precio '+type+': '+fmt.money(last.price)+' · '+fmt.date({seconds:last.ts});
+  } else {
+    hint.textContent='';
+  }
+}
+
+function renderPriceHistory(){
+  const el=document.getElementById('price-history-body');
+  const lp=cfg.lastPrices||{};
+  const types=['Corriente','Extra','Diesel','GNV'];
+  const rows=types.map(t=>{
+    const d=lp[t];
+    if(!d) return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--surface2);border-radius:var(--rxs);border:1px solid var(--border)"><span style="font-size:12px;font-weight:700;color:var(--text2)">${t}</span><span style="font-size:11px;color:var(--text3)">Sin datos</span></div>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--surface2);border-radius:var(--rxs);border:1px solid var(--border)"><span style="font-size:12px;font-weight:700;color:${FUEL_COLORS[t]||'var(--accent)'}">${t}</span><div style="text-align:right"><div style="font-size:13px;font-weight:800">${fmt.money(d.price)}/L</div><div style="font-size:10px;color:var(--text3)">${fmt.date({seconds:d.ts})}</div></div></div>`;
+  });
+  el.innerHTML=rows.join('');
+}
 
 function toggleSb(){
   const sb=document.getElementById('sidebar'),tab=document.getElementById('sb-pull-tab'),ov=document.getElementById('sb-overlay');
