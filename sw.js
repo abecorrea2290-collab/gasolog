@@ -1,5 +1,5 @@
-const CACHE = 'gasolog-v9';
-const ASSETS = ['/', '/index.html', '/manifest.json', '/firebase-config.js'];
+const CACHE = 'gasolog-v10';
+const ASSETS = ['/', '/index.html', '/manifest.json', '/firebase-config.js', '/gasolog-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
