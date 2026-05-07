@@ -1,4 +1,4 @@
-const CACHE = 'gasolog-v10';
+const CACHE = 'gasolog-v11';
 const ASSETS = ['/', '/index.html', '/manifest.json', '/firebase-config.js', '/gasolog-icon.png'];
 
 self.addEventListener('install', e => {
