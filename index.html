@@ -778,6 +778,25 @@ const fmt = {
 };
 
 function gal2L(g){ return g*3.785411784; }
+
+// Agrupa el km recorrido (kmDriven) por mes calendario y por quincena (1-15 / 16-fin de mes)
+function kmPeriods(){
+  const monthKey=d=>d.toLocaleDateString('es-CO',{year:'2-digit',month:'short'});
+  const quincenaKey=d=>monthKey(d)+' · '+(d.getDate()<=15?'Q1':'Q2');
+  const byMonth={}, byQuincena={};
+  records.forEach(r=>{
+    if(!r.kmDriven) return;
+    const d=r.date?.toDate?r.date.toDate():new Date(r.date);
+    if(isNaN(d)) return;
+    const mk=monthKey(d), qk=quincenaKey(d);
+    byMonth[mk]=(byMonth[mk]||0)+r.kmDriven;
+    byQuincena[qk]=(byQuincena[qk]||0)+r.kmDriven;
+  });
+  const now=new Date();
+  const thisMonth=byMonth[monthKey(now)]||0;
+  const thisQuincena=byQuincena[quincenaKey(now)]||0;
+  return { byMonth, byQuincena, thisMonth, thisQuincena };
+}
 function calcEff(km,liters){
   if(!km||!liters||km<=0||liters<=0) return null;
   return { kmL:km/liters, galKm:1/((km/liters)*3.785411784) };
@@ -1086,7 +1105,10 @@ function renderDashboard(){
     }
   }
 
-  // Chips — totales acumulados (2 filas × 3)
+  // Km quincenal y mensual (mes/quincena en curso)
+  const kmP=kmPeriods();
+
+  // Chips — totales acumulados (3 filas × 3)
   const chips=[
     {icon:'🛣️',bg:'rgba(96,165,250,.15)',label:'Km totales',val:totalKm?totalKm.toLocaleString()+' '+cfg.distUnit:'—'},
     {icon:'⛽',bg:'rgba(64,138,113,.15)',label:'Litros totales',val:fmt.n(totalLiters,1)+' L'},
@@ -1094,6 +1116,8 @@ function renderDashboard(){
     {icon:'📍',bg:'rgba(239,68,68,.15)',label:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—'},
     {icon:'📅',bg:'rgba(167,139,250,.15)',label:'Autonomía est.',val:estDays?estDays+' días':'—'},
     {icon:'🔁',bg:'rgba(20,184,166,.15)',label:'Cada',val:avgDaysBetween?avgDaysBetween+' días':'—'},
+    {icon:'🗓️',bg:'rgba(96,165,250,.15)',label:'Km este mes',val:kmP.thisMonth?kmP.thisMonth.toLocaleString()+' '+cfg.distUnit:'—'},
+    {icon:'📆',bg:'rgba(20,184,166,.15)',label:'Km esta quincena',val:kmP.thisQuincena?kmP.thisQuincena.toLocaleString()+' '+cfg.distUnit:'—'},
   ];
 
   // Last fill-up detail
@@ -1311,6 +1335,13 @@ function renderStats(){
   // Precio por litro trend
   const priceRecs=records.filter(r=>r.liters>0&&r.totalCost>0);
 
+  // Km recorridos por mes y por quincena
+  const kmP=kmPeriods();
+  const kmMonthLabels=Object.keys(kmP.byMonth).slice(-8);
+  const kmMonthData=kmMonthLabels.map(k=>kmP.byMonth[k]);
+  const kmQLabels=Object.keys(kmP.byQuincena).slice(-8);
+  const kmQData=kmQLabels.map(k=>kmP.byQuincena[k]);
+
   const statCards=[
     {lbl:'km/L promedio',val:avgKmL?fmt.n(avgKmL):'—',cls:'sc-green',vc:'green'},
     {lbl:'Mejor km/L',val:bestKmL?fmt.n(bestKmL):'—',cls:'sc-green',vc:'green'},
@@ -1321,6 +1352,8 @@ function renderStats(){
     {lbl:'Total tanqueos',val:records.length,cls:'',vc:''},
     {lbl:'Cada (avg)',val:avgDaysBetween?avgDaysBetween+' días':'—',cls:'sc-blue',vc:'blue'},
     {lbl:'Próximo tanqueo est.',val:nextFillDate?fmt.dateShort(nextFillDate):'—',cls:'sc-blue',vc:'blue'},
+    {lbl:'Km este mes',val:kmP.thisMonth?kmP.thisMonth.toLocaleString()+' '+cfg.distUnit:'—',cls:'sc-blue',vc:'blue'},
+    {lbl:'Km esta quincena',val:kmP.thisQuincena?kmP.thisQuincena.toLocaleString()+' '+cfg.distUnit:'—',cls:'sc-blue',vc:'blue'},
     {lbl:'Precio prom. / L',val:avgPricePerL?fmt.money(avgPricePerL):'—',cls:'',vc:''},
     {lbl:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—',cls:'sc-orange',vc:'orange'},
     {lbl:'Costo / tanque',val:fmt.money(avgCost),cls:'sc-orange',vc:'orange'},
@@ -1340,6 +1373,8 @@ function renderStats(){
       +'<div class="sec"><div class="sec-hdr"><div class="sec-title">📍 Costo por km por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="cpkm-chart"></canvas></div></div></div>'
       +'<div class="sec"><div class="sec-hdr"><div class="sec-title">💸 Gasto por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="cost-chart"></canvas></div></div></div>'
       +(monthLabels.length>=2?'<div class="sec"><div class="sec-hdr"><div class="sec-title">🗓️ Gasto mensual</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="monthly-chart"></canvas></div></div></div>':'')
+      +(kmMonthLabels.length>=2?'<div class="sec"><div class="sec-hdr"><div class="sec-title">🛣️ Km recorridos por mes</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="kmmonth-chart"></canvas></div></div></div>':'')
+      +(kmQLabels.length>=2?'<div class="sec"><div class="sec-hdr"><div class="sec-title">📆 Km recorridos por quincena</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="kmq-chart"></canvas></div></div></div>':'')
     :'');
 
   if(withEff.length>=2){
@@ -1394,6 +1429,26 @@ function renderStats(){
           data:{labels:monthLabels,
             datasets:[{data:monthData.map(v=>+v.toFixed(0)),backgroundColor:'rgba(96,165,250,.25)',borderColor:'#60a5fa',borderWidth:1.5,borderRadius:6}]},
           options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:10}},grid:{display:false}},y:ax(true)}},
+        });
+      }
+      // Km por mes
+      if(kmMonthLabels.length>=2 && document.getElementById('kmmonth-chart')){
+        if(window._kmMonthChart) window._kmMonthChart.destroy();
+        window._kmMonthChart=new Chart(document.getElementById('kmmonth-chart'),{
+          type:'bar',
+          data:{labels:kmMonthLabels,
+            datasets:[{data:kmMonthData.map(v=>+v.toFixed(0)),backgroundColor:'rgba(64,138,113,.25)',borderColor:'#408A71',borderWidth:1.5,borderRadius:6}]},
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4d8275',font:{size:10}},grid:{color:'rgba(30,56,48,.8)'}}}},
+        });
+      }
+      // Km por quincena
+      if(kmQLabels.length>=2 && document.getElementById('kmq-chart')){
+        if(window._kmQChart) window._kmQChart.destroy();
+        window._kmQChart=new Chart(document.getElementById('kmq-chart'),{
+          type:'bar',
+          data:{labels:kmQLabels,
+            datasets:[{data:kmQData.map(v=>+v.toFixed(0)),backgroundColor:'rgba(20,184,166,.25)',borderColor:'#14b8a6',borderWidth:1.5,borderRadius:6}]},
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:9}},grid:{display:false}},y:{ticks:{color:'#4d8275',font:{size:10}},grid:{color:'rgba(30,56,48,.8)'}}}},
         });
       }
     });
