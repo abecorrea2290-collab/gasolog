@@ -1,30 +1,32 @@
 {
+  "id": "/",
   "name": "GasoLog - Control de Combustible",
   "short_name": "GasoLog",
   "description": "Registra y analiza el consumo de combustible de tu vehículo",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#091413",
   "theme_color": "#091413",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "gasolog-icon.png",
+      "src": "gasolog-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "gasolog-icon.png",
+      "src": "gasolog-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "gasolog-icon.png",
-      "sizes": "1024x1024",
+      "src": "gasolog-icon-512.png",
+      "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ],
   "categories": ["utilities", "lifestyle"],
