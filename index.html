@@ -1054,24 +1054,43 @@ function renderDashboard(){
   // Streak = total fill-ups
   const streak=records.length;
 
+  // Extra KPIs
+  const costPerKm=totalKm&&totalKm>0?totalCost/totalKm:null;
+  const monthlyEst=costPerKm?costPerKm*cfg.dailyKm*30:null;
+  const annualEst=costPerKm?costPerKm*cfg.dailyKm*365:null;
+  const avgPrice=totalLiters>0?totalCost/totalLiters:null;
+  const dates=records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  const avgDaysBetween=dates.length>=2?Math.round((dates[dates.length-1]-dates[0])/(86400000*(dates.length-1))):null;
+
+  // Tendencia eficiencia: últimos 3 vs primeros 3
+  let trendHtml='';
+  if(withKm.length>=6){
+    const first3=withKm.slice(0,3).reduce((s,r)=>s+r.kmL,0)/3;
+    const last3=withKm.slice(-3).reduce((s,r)=>s+r.kmL,0)/3;
+    const delta=((last3-first3)/first3)*100;
+    const up=delta>=0;
+    trendHtml=`<div class="insight-card"><div class="insight-icon">${up?'📈':'📉'}</div><div><div class="insight-title">Tendencia de eficiencia</div><div class="insight-sub">${up?'Mejoraste':'Bajaste'} ${fmt.n(Math.abs(delta),1)}% vs primeros tanqueos · últimos 3 avg: ${fmt.n(last3)} km/L</div></div></div>`;
+  }
+
   // Insight
   let insightHtml='';
   if(withKm.length>=2 && statKmL){
     const lastEff=last.kmL;
     if(lastEff && lastEff>statKmL*1.05){
       insightHtml='<div class="insight-card"><div class="insight-icon">⭐</div><div><div class="insight-title">Racha de Rendimiento</div><div class="insight-sub">Último tanqueo '+fmt.n(((lastEff/statKmL)-1)*100,0)+'% sobre tu promedio estadístico</div></div></div>';
-    } else if(totalKm && totalKm>0){
-      const costPerKm=totalCost/totalKm;
-      insightHtml='<div class="insight-card"><div class="insight-icon">💡</div><div><div class="insight-title">Costo por km</div><div class="insight-sub">Gastas ~'+fmt.money(costPerKm)+' por km · Mensual est. '+fmt.money(costPerKm*cfg.dailyKm*30)+'</div></div></div>';
+    } else if(costPerKm){
+      insightHtml='<div class="insight-card"><div class="insight-icon">💡</div><div><div class="insight-title">Costo por km</div><div class="insight-sub">~'+fmt.money(costPerKm)+'/km · Mensual est. '+fmt.money(monthlyEst)+' · Anual est. '+fmt.money(annualEst)+'</div></div></div>';
     }
   }
 
-  // Chips — totales acumulados
+  // Chips — totales acumulados (2 filas × 3)
   const chips=[
     {icon:'🛣️',bg:'rgba(96,165,250,.15)',label:'Km totales',val:totalKm?totalKm.toLocaleString()+' '+cfg.distUnit:'—'},
     {icon:'⛽',bg:'rgba(64,138,113,.15)',label:'Litros totales',val:fmt.n(totalLiters,1)+' L'},
     {icon:'💰',bg:'rgba(251,191,36,.15)',label:'Gasto total',val:fmt.money(totalCost)},
-    {icon:'📅',bg:'rgba(167,139,250,.15)',label:'Días estimados',val:estDays?estDays+' días':'—'},
+    {icon:'📍',bg:'rgba(239,68,68,.15)',label:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—'},
+    {icon:'📅',bg:'rgba(167,139,250,.15)',label:'Autonomía est.',val:estDays?estDays+' días':'—'},
+    {icon:'🔁',bg:'rgba(20,184,166,.15)',label:'Cada',val:avgDaysBetween?avgDaysBetween+' días':'—'},
   ];
 
   // Last fill-up detail
@@ -1105,11 +1124,12 @@ function renderDashboard(){
         +'<div class="eff-bar-track"><div class="eff-bar-fill" style="width:'+effPct+'%;background:'+effColor+'"></div></div>'
       +'</div>'
 
-      +'<div class="chips-grid">'
+      +'<div class="chips-grid" style="grid-template-columns:repeat(3,1fr)">'
         +chips.map(c=>'<div class="chip"><div class="chip-icon" style="background:'+c.bg+'">'+c.icon+'</div><div><div class="chip-label">'+c.label+'</div><div class="chip-value">'+c.val+'</div></div></div>').join('')
       +'</div>'
 
       +insightHtml
+      +trendHtml
 
       +'<div class="toggle-row">'
         +'<div class="toggle-info"><div class="toggle-label">Último tanqueo · '+fmt.rel(last.date)+'</div><div class="toggle-sub">'+fmt.date(last.date)+'</div></div>'
@@ -1122,6 +1142,8 @@ function renderDashboard(){
       +[
         {lbl:'km/L estadístico',val:statKmL?fmt.n(statKmL):'—',cls:'sc-green',vc:'green'},
         {lbl:'Mejor km/L',val:fmt.n(bestKmL),cls:'sc-green',vc:'green'},
+        {lbl:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—',cls:'sc-orange',vc:'orange'},
+        {lbl:'Gasto mensual est.',val:monthlyEst?fmt.money(monthlyEst):'—',cls:'sc-orange',vc:'orange'},
         {lbl:'Gasto total',val:fmt.money(totalCost),cls:'sc-orange',vc:'orange'},
         {lbl:'Rango estimado',val:estRange?Math.round(estRange).toLocaleString()+' '+cfg.distUnit:'—',cls:'sc-blue',vc:'blue'},
       ].map(c=>'<div class="stat-card '+c.cls+'"><div class="sc-lbl">'+c.lbl+'</div><div class="sc-val '+c.vc+'">'+c.val+'</div></div>').join('')
@@ -1243,7 +1265,7 @@ function renderStats(){
     return;
   }
   const withEff=records.filter(r=>r.kmL);
-  const avgKmL=withEff.reduce((s,r)=>s+r.kmL,0)/(withEff.length||1);
+  const avgKmL=withEff.length?withEff.reduce((s,r)=>s+r.kmL,0)/withEff.length:null;
   const bestKmL=withEff.length?Math.max(...withEff.map(r=>r.kmL)):null;
   const worstKmL=withEff.length?Math.min(...withEff.map(r=>r.kmL)):null;
   const totalKm=records[records.length-1].odometer-records[0].odometer;
@@ -1252,26 +1274,56 @@ function renderStats(){
   const avgCost=totalCost/records.length;
   const costPerKm=totalKm>0?totalCost/totalKm:null;
   const monthly=costPerKm?costPerKm*cfg.dailyKm*30:null;
+  const annual=costPerKm?costPerKm*cfg.dailyKm*365:null;
+  const avgPricePerL=totalL>0?totalCost/totalL:null;
+  const dates=records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  const avgDaysBetween=dates.length>=2?Math.round((dates[dates.length-1]-dates[0])/(86400000*(dates.length-1))):null;
+  // Tendencia eficiencia
+  let trendPct=null;
+  if(withEff.length>=6){
+    const first3=withEff.slice(0,3).reduce((s,r)=>s+r.kmL,0)/3;
+    const last3=withEff.slice(-3).reduce((s,r)=>s+r.kmL,0)/3;
+    trendPct=((last3-first3)/first3)*100;
+  }
+  // Gasto mensual agrupado
+  const byMonth={};
+  records.forEach(r=>{
+    const d=r.date?.toDate?r.date.toDate():new Date(r.date);
+    if(isNaN(d)) return;
+    const k=d.toLocaleDateString('es-CO',{year:'2-digit',month:'short'});
+    byMonth[k]=(byMonth[k]||0)+r.totalCost;
+  });
+  const monthLabels=Object.keys(byMonth).slice(-8);
+  const monthData=monthLabels.map(k=>byMonth[k]);
+  // Precio por litro trend
+  const priceRecs=records.filter(r=>r.liters>0&&r.totalCost>0);
 
   const statCards=[
-    {lbl:'Promedio km/L',val:fmt.n(avgKmL),cls:'sc-green',vc:'green'},
-    {lbl:'Mejor km/L',val:fmt.n(bestKmL),cls:'sc-green',vc:'green'},
-    {lbl:'Peor km/L',val:fmt.n(worstKmL),cls:'sc-red',vc:'red'},
-    {lbl:'Total km',val:totalKm.toLocaleString(),cls:'sc-blue',vc:'blue'},
-    {lbl:'Total combustible',val:fmt.n(totalL,0)+' L',cls:'',vc:''},
-    {lbl:'Total gastado',val:fmt.money(totalCost),cls:'sc-orange',vc:'orange'},
-    {lbl:'Costo / tanque',val:fmt.money(avgCost),cls:'sc-orange',vc:'orange'},
-    {lbl:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—',cls:'',vc:''},
-    {lbl:'Gasto mensual est.',val:monthly?fmt.money(monthly):'—',cls:'sc-orange',vc:'orange'},
+    {lbl:'km/L promedio',val:avgKmL?fmt.n(avgKmL):'—',cls:'sc-green',vc:'green'},
+    {lbl:'Mejor km/L',val:bestKmL?fmt.n(bestKmL):'—',cls:'sc-green',vc:'green'},
+    {lbl:'Peor km/L',val:worstKmL?fmt.n(worstKmL):'—',cls:'sc-red',vc:'red'},
+    {lbl:'Tendencia efic.',val:trendPct!==null?(trendPct>=0?'↑ +':'↓ ')+fmt.n(Math.abs(trendPct),1)+'%':'Pocos datos',cls:trendPct!==null&&trendPct>=0?'sc-green':'sc-red',vc:trendPct!==null&&trendPct>=0?'green':'red'},
+    {lbl:'Total km',val:totalKm.toLocaleString()+' '+cfg.distUnit,cls:'sc-blue',vc:'blue'},
+    {lbl:'Total combustible',val:fmt.n(totalL,1)+' L',cls:'',vc:''},
     {lbl:'Total tanqueos',val:records.length,cls:'',vc:''},
+    {lbl:'Cada (avg)',val:avgDaysBetween?avgDaysBetween+' días':'—',cls:'sc-blue',vc:'blue'},
+    {lbl:'Precio prom. / L',val:avgPricePerL?fmt.money(avgPricePerL):'—',cls:'',vc:''},
+    {lbl:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—',cls:'sc-orange',vc:'orange'},
+    {lbl:'Costo / tanque',val:fmt.money(avgCost),cls:'sc-orange',vc:'orange'},
+    {lbl:'Gasto total',val:fmt.money(totalCost),cls:'sc-orange',vc:'orange'},
+    {lbl:'Gasto mensual est.',val:monthly?fmt.money(monthly):'—',cls:'sc-orange',vc:'orange'},
+    {lbl:'Gasto anual est.',val:annual?fmt.money(annual):'—',cls:'sc-orange',vc:'orange'},
   ];
 
   el.innerHTML='<div class="stat-grid">'
     +statCards.map(c=>'<div class="stat-card '+c.cls+'"><div class="sc-lbl">'+c.lbl+'</div><div class="sc-val '+c.vc+'">'+c.val+'</div></div>').join('')
     +'</div>'
     +(withEff.length>=2?
-      '<div class="sec"><div class="sec-hdr"><div class="sec-title">📈 Eficiencia por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="kml-chart"></canvas></div></div></div>'
-      +'<div class="sec"><div class="sec-hdr"><div class="sec-title">💸 Costo por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="cost-chart"></canvas></div></div></div>'
+      '<div class="sec"><div class="sec-hdr"><div class="sec-title">📈 Eficiencia por tanqueo (km/L)</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="kml-chart"></canvas></div></div></div>'
+      +'<div class="sec"><div class="sec-hdr"><div class="sec-title">💲 Precio combustible por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="price-chart"></canvas></div></div></div>'
+      +'<div class="sec"><div class="sec-hdr"><div class="sec-title">📍 Costo por km por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="cpkm-chart"></canvas></div></div></div>'
+      +'<div class="sec"><div class="sec-hdr"><div class="sec-title">💸 Gasto por tanqueo</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="cost-chart"></canvas></div></div></div>'
+      +(monthLabels.length>=2?'<div class="sec"><div class="sec-hdr"><div class="sec-title">🗓️ Gasto mensual</div></div><div class="sec-body"><div class="chart-wrap"><canvas id="monthly-chart"></canvas></div></div></div>':'')
     :'');
 
   if(withEff.length>=2){
@@ -1287,7 +1339,7 @@ function renderStats(){
         type:'line',
         data:{labels:last10e.map(r=>fmt.dateShort(r.date)),
           datasets:[{data:last10e.map(r=>+r.kmL.toFixed(2)),borderColor:'#408A71',backgroundColor:'rgba(64,138,113,.12)',borderWidth:2.5,pointRadius:5,pointBackgroundColor:'#408A71',pointBorderColor:'#091413',pointBorderWidth:2,fill:true,tension:.35}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:ax(false),y:ax(false)}},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:ax(false),y:{...ax(false),title:{display:true,text:'km/L',color:'#4d8275',font:{size:10}}}}},
       });
       if(costChart) costChart.destroy();
       costChart=new Chart(document.getElementById('cost-chart'),{
@@ -1296,6 +1348,38 @@ function renderStats(){
           datasets:[{data:last10.map(r=>+r.totalCost.toFixed(0)),backgroundColor:'rgba(251,191,36,.25)',borderColor:'#fbbf24',borderWidth:1.5,borderRadius:6}]},
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:10}},grid:{display:false}},y:ax(true)}},
       });
+      // Precio por litro
+      const last10p=priceRecs.slice(-10);
+      if(document.getElementById('price-chart')){
+        if(window._priceChart) window._priceChart.destroy();
+        window._priceChart=new Chart(document.getElementById('price-chart'),{
+          type:'line',
+          data:{labels:last10p.map(r=>fmt.dateShort(r.date)),
+            datasets:[{data:last10p.map(r=>+(r.totalCost/r.liters).toFixed(0)),borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,.1)',borderWidth:2.5,pointRadius:5,pointBackgroundColor:'#a78bfa',pointBorderColor:'#091413',pointBorderWidth:2,fill:true,tension:.35}]},
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4d8275',font:{size:10},callback:v=>'$'+(v/1000).toFixed(0)+'k'},grid:{color:'rgba(30,56,48,.8)'}}}},
+        });
+      }
+      // Costo por km trend
+      const cpkmRecs=withEff.filter(r=>r.kmDriven&&r.liters).slice(-10);
+      if(document.getElementById('cpkm-chart')){
+        if(window._cpkmChart) window._cpkmChart.destroy();
+        window._cpkmChart=new Chart(document.getElementById('cpkm-chart'),{
+          type:'line',
+          data:{labels:cpkmRecs.map(r=>fmt.dateShort(r.date)),
+            datasets:[{data:cpkmRecs.map(r=>+(r.totalCost/r.kmDriven).toFixed(1)),borderColor:'#f97316',backgroundColor:'rgba(249,115,22,.1)',borderWidth:2.5,pointRadius:5,pointBackgroundColor:'#f97316',pointBorderColor:'#091413',pointBorderWidth:2,fill:true,tension:.35}]},
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4d8275',font:{size:10},callback:v=>'$'+v},grid:{color:'rgba(30,56,48,.8)'}}}},
+        });
+      }
+      // Gasto mensual
+      if(monthLabels.length>=2 && document.getElementById('monthly-chart')){
+        if(window._monthlyChart) window._monthlyChart.destroy();
+        window._monthlyChart=new Chart(document.getElementById('monthly-chart'),{
+          type:'bar',
+          data:{labels:monthLabels,
+            datasets:[{data:monthData.map(v=>+v.toFixed(0)),backgroundColor:'rgba(96,165,250,.25)',borderColor:'#60a5fa',borderWidth:1.5,borderRadius:6}]},
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4d8275',font:{size:10}},grid:{display:false}},y:ax(true)}},
+        });
+      }
     });
   }
 }
