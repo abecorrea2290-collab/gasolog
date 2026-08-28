@@ -1056,11 +1056,14 @@ function renderDashboard(){
 
   // Extra KPIs
   const costPerKm=totalKm&&totalKm>0?totalCost/totalKm:null;
-  const monthlyEst=costPerKm?costPerKm*cfg.dailyKm*30:null;
-  const annualEst=costPerKm?costPerKm*cfg.dailyKm*365:null;
   const avgPrice=totalLiters>0?totalCost/totalLiters:null;
   const dates=records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
   const avgDaysBetween=dates.length>=2?Math.round((dates[dates.length-1]-dates[0])/(86400000*(dates.length-1))):null;
+  // Gasto mensual/anual REAL: gasto total / meses transcurridos entre el primer y último tanqueo
+  // (evita el error de estimar con un kilometraje diario que no coincide con la frecuencia real de tanqueo)
+  const monthsSpan=dates.length>=2?Math.max((dates[dates.length-1]-dates[0])/(86400000*30.44),1):null;
+  const monthlyEst=monthsSpan?totalCost/monthsSpan:null;
+  const annualEst=monthlyEst?monthlyEst*12:null;
 
   // Tendencia eficiencia: últimos 3 vs primeros 3
   let trendHtml='';
@@ -1079,7 +1082,7 @@ function renderDashboard(){
     if(lastEff && lastEff>statKmL*1.05){
       insightHtml='<div class="insight-card"><div class="insight-icon">⭐</div><div><div class="insight-title">Racha de Rendimiento</div><div class="insight-sub">Último tanqueo '+fmt.n(((lastEff/statKmL)-1)*100,0)+'% sobre tu promedio estadístico</div></div></div>';
     } else if(costPerKm){
-      insightHtml='<div class="insight-card"><div class="insight-icon">💡</div><div><div class="insight-title">Costo por km</div><div class="insight-sub">~'+fmt.money(costPerKm)+'/km · Mensual est. '+fmt.money(monthlyEst)+' · Anual est. '+fmt.money(annualEst)+'</div></div></div>';
+      insightHtml='<div class="insight-card"><div class="insight-icon">💡</div><div><div class="insight-title">Costo por km</div><div class="insight-sub">~'+fmt.money(costPerKm)+'/km · Mensual real '+(monthlyEst?fmt.money(monthlyEst):'—')+' · Anual proy. '+(annualEst?fmt.money(annualEst):'—')+'</div></div></div>';
     }
   }
 
@@ -1143,7 +1146,7 @@ function renderDashboard(){
         {lbl:'km/L estadístico',val:statKmL?fmt.n(statKmL):'—',cls:'sc-green',vc:'green'},
         {lbl:'Mejor km/L',val:fmt.n(bestKmL),cls:'sc-green',vc:'green'},
         {lbl:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—',cls:'sc-orange',vc:'orange'},
-        {lbl:'Gasto mensual est.',val:monthlyEst?fmt.money(monthlyEst):'—',cls:'sc-orange',vc:'orange'},
+        {lbl:'Gasto mensual real',val:monthlyEst?fmt.money(monthlyEst):'—',cls:'sc-orange',vc:'orange'},
         {lbl:'Gasto total',val:fmt.money(totalCost),cls:'sc-orange',vc:'orange'},
         {lbl:'Rango estimado',val:estRange?Math.round(estRange).toLocaleString()+' '+cfg.distUnit:'—',cls:'sc-blue',vc:'blue'},
       ].map(c=>'<div class="stat-card '+c.cls+'"><div class="sc-lbl">'+c.lbl+'</div><div class="sc-val '+c.vc+'">'+c.val+'</div></div>').join('')
@@ -1273,11 +1276,17 @@ function renderStats(){
   const totalCost=records.reduce((s,r)=>s+r.totalCost,0);
   const avgCost=totalCost/records.length;
   const costPerKm=totalKm>0?totalCost/totalKm:null;
-  const monthly=costPerKm?costPerKm*cfg.dailyKm*30:null;
-  const annual=costPerKm?costPerKm*cfg.dailyKm*365:null;
   const avgPricePerL=totalL>0?totalCost/totalL:null;
   const dates=records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
   const avgDaysBetween=dates.length>=2?Math.round((dates[dates.length-1]-dates[0])/(86400000*(dates.length-1))):null;
+  // Gasto mensual/anual REAL: gasto total / meses transcurridos (no un estimado por km/día)
+  const monthsSpan=dates.length>=2?Math.max((dates[dates.length-1]-dates[0])/(86400000*30.44),1):null;
+  const monthly=monthsSpan?totalCost/monthsSpan:null;
+  const annual=monthly?monthly*12:null;
+  // Próximo tanqueo estimado
+  const lastDate=dates.length?dates[dates.length-1]:null;
+  const avgCostPerFill=totalCost/records.length;
+  const nextFillDate=lastDate&&avgDaysBetween?new Date(lastDate.getTime()+avgDaysBetween*86400000):null;
   // Tendencia eficiencia
   let trendPct=null;
   if(withEff.length>=6){
@@ -1295,6 +1304,10 @@ function renderStats(){
   });
   const monthLabels=Object.keys(byMonth).slice(-8);
   const monthData=monthLabels.map(k=>byMonth[k]);
+  // Mes más caro / más barato (solo si hay ≥2 meses distintos)
+  const monthEntries=Object.entries(byMonth);
+  const priciestMonth=monthEntries.length>=2?monthEntries.reduce((a,b)=>b[1]>a[1]?b:a):null;
+  const cheapestMonth=monthEntries.length>=2?monthEntries.reduce((a,b)=>b[1]<a[1]?b:a):null;
   // Precio por litro trend
   const priceRecs=records.filter(r=>r.liters>0&&r.totalCost>0);
 
@@ -1307,13 +1320,16 @@ function renderStats(){
     {lbl:'Total combustible',val:fmt.n(totalL,1)+' L',cls:'',vc:''},
     {lbl:'Total tanqueos',val:records.length,cls:'',vc:''},
     {lbl:'Cada (avg)',val:avgDaysBetween?avgDaysBetween+' días':'—',cls:'sc-blue',vc:'blue'},
+    {lbl:'Próximo tanqueo est.',val:nextFillDate?fmt.dateShort(nextFillDate):'—',cls:'sc-blue',vc:'blue'},
     {lbl:'Precio prom. / L',val:avgPricePerL?fmt.money(avgPricePerL):'—',cls:'',vc:''},
     {lbl:'Costo / km',val:costPerKm?fmt.money(costPerKm):'—',cls:'sc-orange',vc:'orange'},
     {lbl:'Costo / tanque',val:fmt.money(avgCost),cls:'sc-orange',vc:'orange'},
     {lbl:'Gasto total',val:fmt.money(totalCost),cls:'sc-orange',vc:'orange'},
-    {lbl:'Gasto mensual est.',val:monthly?fmt.money(monthly):'—',cls:'sc-orange',vc:'orange'},
-    {lbl:'Gasto anual est.',val:annual?fmt.money(annual):'—',cls:'sc-orange',vc:'orange'},
-  ];
+    {lbl:'Gasto mensual real',val:monthly?fmt.money(monthly):'—',cls:'sc-orange',vc:'orange'},
+    {lbl:'Gasto anual proy.',val:annual?fmt.money(annual):'—',cls:'sc-orange',vc:'orange'},
+    priciestMonth?{lbl:'Mes más caro',val:priciestMonth[0]+' · '+fmt.money(priciestMonth[1]),cls:'sc-red',vc:'red'}:null,
+    cheapestMonth?{lbl:'Mes más barato',val:cheapestMonth[0]+' · '+fmt.money(cheapestMonth[1]),cls:'sc-green',vc:'green'}:null,
+  ].filter(Boolean);
 
   el.innerHTML='<div class="stat-grid">'
     +statCards.map(c=>'<div class="stat-card '+c.cls+'"><div class="sc-lbl">'+c.lbl+'</div><div class="sc-val '+c.vc+'">'+c.val+'</div></div>').join('')
