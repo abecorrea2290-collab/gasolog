@@ -1391,12 +1391,23 @@ function renderMantenimiento(){
       ? `Toca a los ${fmt.int(distToDisplay((m.kmBase||0)+(m.intervaloKm||5000)))} ${distUnitLabel()}`
       : (mantVenceISO(m) ? `Vence ${fmt.date(mantVenceISO(m))}` : (m.tipo==='tecnomecanica'&&m.vehicleYear&&tecnoMonths(parseInt(m.vehicleYear))===0?'Vehículo exento':'Sin datos'));
     const kmLine = (m.modo==='fecha' && m.kmRegistro) ? `<div class="maint-km">Registrado a los ${fmt.int(distToDisplay(m.kmRegistro))} ${distUnitLabel()}</div>` : '';
+    // Estimación en días para el mantenimiento por kilometraje (aceite), a partir del promedio
+    // real de km diarios calculado con el histórico de tanqueos (avgDailyKm()).
+    let diasLine = '';
+    if(m.modo==='kilometraje'){
+      const dias = mantDiasRestantes(m);
+      if(dias!==null){
+        diasLine = `<div class="maint-km">${dias<0?`Vencido hace ${Math.abs(dias)} días`:`≈ ${dias} días con tu manejo actual`}</div>`;
+      } else {
+        diasLine = `<div class="maint-km">Registra al menos un tanqueo con odómetro para estimar los días.</div>`;
+      }
+    }
     return `<div class="card elev-sm maint-card">
       <div class="maint-hdr"><h5>${mantLabel(tipo)}</h5><span class="tag ${tag.cls}">${tag.label}</span></div>
       <div class="maint-copy">${mantConsejo(m,tag)}</div>
       <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div class="maint-foot"><span>${fecha}</span><span>${costo}</span></div>
-      ${kmLine}
+      ${kmLine}${diasLine}
       <button class="btn btn-ghost" style="align-self:flex-start" onclick="editMant('${tipo}')">Editar</button>
     </div>`;
   }).join('');
@@ -1691,6 +1702,12 @@ function renderAjustes(){
     </div>
 
     <div class="card elev-sm" style="padding:22.4px;gap:11.2px">
+      <h5>Instalar la app</h5>
+      <div style="font-size:13px;color:var(--color-text-dim)" id="pwa-install-copy">Comprobando…</div>
+      <button class="btn btn-primary btn-block" id="btn-install-pwa" style="display:none" onclick="installPwa()">Instalar GasoLog</button>
+    </div>
+
+    <div class="card elev-sm" style="padding:22.4px;gap:11.2px">
       <h5>Mis estaciones</h5>
       <div style="font-size:13px;color:var(--color-text-dim)">Aparecen como atajos al registrar un tanqueo.</div>
       <div style="display:flex;flex-direction:column;gap:5.6px">
@@ -1712,6 +1729,33 @@ function renderAjustes(){
   attachFormatter(document.getElementById('cfg-tank'), miles);
   const cfgDailyEl = document.getElementById('cfg-daily');
   if(cfgDailyEl) attachFormatter(cfgDailyEl, miles);
+  updatePwaInstallUI();
+}
+function isPwaStandalone(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+}
+function updatePwaInstallUI(){
+  const copy = document.getElementById('pwa-install-copy');
+  const btn = document.getElementById('btn-install-pwa');
+  if(!copy || !btn) return;
+  if(isPwaStandalone()){
+    copy.textContent = 'Ya la tienes instalada en este dispositivo.';
+    btn.style.display = 'none';
+  } else if(_pwaPrompt){
+    copy.textContent = 'Instálala para acceso rápido desde tu pantalla de inicio, sin pasar por el navegador.';
+    btn.style.display = '';
+  } else {
+    copy.textContent = 'Tu navegador aún no ofrece instalación con un botón. En Chrome/Edge (Android o escritorio) usa el menú ⋮ → "Instalar app"; en iPhone usa Compartir → "Agregar a pantalla de inicio".';
+    btn.style.display = 'none';
+  }
+}
+async function installPwa(){
+  if(!_pwaPrompt) return;
+  _pwaPrompt.prompt();
+  const choice = await _pwaPrompt.userChoice;
+  _pwaPrompt = null;
+  updatePwaInstallUI();
+  toast(choice.outcome==='accepted' ? 'Instalando…' : 'Instalación cancelada');
 }
 function bindSeg(id, onChange){
   const seg=document.getElementById(id);
@@ -2027,8 +2071,8 @@ window.addEventListener('offline',()=>setSyncStatus('offline','Sin conexión —
 if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
 
 let _pwaPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); _pwaPrompt=e; });
-window.addEventListener('appinstalled',()=>{ _pwaPrompt=null; });
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); _pwaPrompt=e; if(activeView==='ajustes') updatePwaInstallUI(); });
+window.addEventListener('appinstalled',()=>{ _pwaPrompt=null; if(activeView==='ajustes') updatePwaInstallUI(); });
 
 showView('resumen');
 </script>
