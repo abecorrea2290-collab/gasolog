@@ -336,6 +336,7 @@ main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px
 .maint-hdr h5{font-size:17px}
 .maint-copy{font-size:13px;color:var(--color-text-dim)}
 .maint-foot{display:flex;justify-content:space-between;font-size:12px;color:var(--color-text-dimmer)}
+.maint-km{font-size:11px;color:var(--color-text-dimmer)}
 
 /* Ajustes: color de acento */
 .accent-swatches{display:flex;gap:11.2px;flex-wrap:wrap}
@@ -567,6 +568,20 @@ main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px
       <div class="dialog-actions">
         <button type="submit" class="btn btn-primary">Guardar viaje</button>
         <button type="button" class="btn btn-secondary" onclick="closeDialog('viaje-modal')">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ MODAL: Editar mantenimiento (SOAT / Tecnomecánica / Seguro / Aceite) ══ -->
+<div class="dialog-backdrop" id="mant-modal" role="dialog" aria-modal="true" aria-labelledby="mant-modal-title">
+  <div class="dialog elev-lg">
+    <h3 class="dialog-title" id="mant-modal-title">Editar</h3>
+    <form id="mant-form" style="display:flex;flex-direction:column;gap:11.2px">
+      <div id="mant-form-fields" style="display:flex;flex-direction:column;gap:11.2px"></div>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <button type="button" class="btn btn-secondary" onclick="closeDialog('mant-modal')">Cancelar</button>
       </div>
     </form>
   </div>
@@ -1375,11 +1390,13 @@ function renderMantenimiento(){
     const fecha = m.modo==='kilometraje'
       ? `Toca a los ${fmt.int(distToDisplay((m.kmBase||0)+(m.intervaloKm||5000)))} ${distUnitLabel()}`
       : (mantVenceISO(m) ? `Vence ${fmt.date(mantVenceISO(m))}` : (m.tipo==='tecnomecanica'&&m.vehicleYear&&tecnoMonths(parseInt(m.vehicleYear))===0?'Vehículo exento':'Sin datos'));
+    const kmLine = (m.modo==='fecha' && m.kmRegistro) ? `<div class="maint-km">Registrado a los ${fmt.int(distToDisplay(m.kmRegistro))} ${distUnitLabel()}</div>` : '';
     return `<div class="card elev-sm maint-card">
       <div class="maint-hdr"><h5>${mantLabel(tipo)}</h5><span class="tag ${tag.cls}">${tag.label}</span></div>
       <div class="maint-copy">${mantConsejo(m,tag)}</div>
       <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div class="maint-foot"><span>${fecha}</span><span>${costo}</span></div>
+      ${kmLine}
       <button class="btn btn-ghost" style="align-self:flex-start" onclick="editMant('${tipo}')">Editar</button>
     </div>`;
   }).join('');
@@ -1440,31 +1457,70 @@ function mantSetupCard(tipo){
   </div>`;
 }
 
-async function editMant(tipo){
+// Campo común "Kilometraje al registrar" para SOAT/tecnomecánica/seguro: el odómetro en el
+// momento del trámite — puramente informativo, no afecta el cálculo de vencimiento (que es por
+// fecha), pero queda guardado para consulta y para el histórico de pagos.
+function editMant(tipo){
   const m = mantenimiento.find(x=>x.tipo===tipo) || {tipo};
-  let fields;
+  document.getElementById('mant-form').dataset.tipo = tipo;
+  const kmFieldHtml = (labelExtra)=>`<div class="field"><label>Kilometraje ${labelExtra} (${distUnitLabel()}, opcional)</label><input class="input" type="text" inputmode="numeric" id="m-km" value="${m.kmRegistro?miles(String(Math.round(distToDisplay(m.kmRegistro)))):''}"/></div>`;
+  let title, html;
   if(tipo==='soat'){
-    fields = { fechaBase: prompt('Fecha de compra del SOAT (AAAA-MM-DD):', m.fechaBase||''), costoEstimado: prompt('Costo (opcional):', m.costoEstimado||'') };
-    if(fields.fechaBase===null) return;
-    await mantRef().doc('soat').set({tipo:'soat',modo:'fecha',fechaBase:fields.fechaBase,duracionMeses:12,costoEstimado:parseFloat(fields.costoEstimado)||0,periodicidad:'anual'});
+    title = 'Editar SOAT';
+    html = `
+      <div class="field"><label>Fecha de compra</label><input class="input" type="date" id="m-fecha" value="${m.fechaBase||''}" required/></div>
+      ${kmFieldHtml('al comprar')}
+      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
   } else if(tipo==='tecnomecanica'){
-    const year = prompt('Año modelo del vehículo:', m.vehicleYear||''); if(year===null) return;
-    const fecha = prompt('Fecha de la última revisión (AAAA-MM-DD):', m.fechaBase||''); if(fecha===null) return;
-    const costo = prompt('Costo (opcional):', m.costoEstimado||'');
-    await mantRef().doc('tecnomecanica').set({tipo:'tecnomecanica',modo:'fecha',fechaBase:fecha,vehicleYear:parseInt(year)||null,costoEstimado:parseFloat(costo)||0,periodicidad:'anual'});
+    title = 'Editar tecnomecánica';
+    html = `
+      <div class="field"><label>Año modelo del vehículo</label><input class="input" type="text" inputmode="numeric" id="m-year" value="${m.vehicleYear||''}" required/></div>
+      <div class="field"><label>Fecha de la última revisión</label><input class="input" type="date" id="m-fecha" value="${m.fechaBase||''}" required/></div>
+      ${kmFieldHtml('en la revisión')}
+      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
   } else if(tipo==='seguro'){
-    const fecha = prompt('Fecha de inicio de la póliza (AAAA-MM-DD):', m.fechaBase||''); if(fecha===null) return;
-    const dur = prompt('Duración en meses:', m.duracionMeses||12); if(dur===null) return;
-    const costo = prompt('Costo (opcional):', m.costoEstimado||'');
-    await mantRef().doc('seguro').set({tipo:'seguro',modo:'fecha',fechaBase:fecha,duracionMeses:parseInt(dur)||12,costoEstimado:parseFloat(costo)||0,periodicidad:'anual'});
+    title = 'Editar seguro todo riesgo';
+    html = `
+      <div class="field"><label>Fecha de inicio de la póliza</label><input class="input" type="date" id="m-fecha" value="${m.fechaBase||''}" required/></div>
+      <div class="field"><label>Duración (meses)</label><input class="input" type="text" inputmode="numeric" id="m-dur" value="${m.duracionMeses||12}" required/></div>
+      ${kmFieldHtml('al iniciar')}
+      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
   } else if(tipo==='aceite'){
-    const km = prompt('Kilometraje del último cambio:', m.kmBase||''); if(km===null) return;
-    const oilType = prompt('Tipo de aceite (mineral/semisintetico/sintetico/sinteticoFull):', m.oilType||'semisintetico') || 'semisintetico';
-    const costo = prompt('Costo (opcional):', m.costoEstimado||'');
-    await mantRef().doc('aceite').set({tipo:'aceite',modo:'kilometraje',kmBase:parseInt(km)||0,intervaloKm:(OIL_TYPES[oilType]||OIL_TYPES.semisintetico).km,oilType,costoEstimado:parseFloat(costo)||0,periodicidad:'porKm'});
+    title = 'Editar cambio de aceite';
+    html = `
+      <div class="field"><label>Kilometraje del último cambio (${distUnitLabel()})</label><input class="input" type="text" inputmode="numeric" id="m-km" value="${m.kmBase?miles(String(Math.round(distToDisplay(m.kmBase)))):''}" required/></div>
+      <div class="field"><label>Tipo de aceite</label><select class="input" id="m-oiltype">
+        ${Object.entries(OIL_TYPES).map(([k,v])=>`<option value="${k}" ${m.oilType===k?'selected':''}>${v.label||k} (cada ${v.km.toLocaleString()} km)</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
   }
-  toast('Guardado');
+  document.getElementById('mant-modal-title').textContent = title;
+  document.getElementById('mant-form-fields').innerHTML = html;
+  ['m-km','m-costo','m-year','m-dur'].forEach(id=>{ const el=document.getElementById(id); if(el) attachFormatter(el, miles); });
+  openDialog('mant-modal');
 }
+document.getElementById('mant-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const tipo = e.target.dataset.tipo;
+  const kmEl = document.getElementById('m-km');
+  const kmRegistro = kmEl && kmEl.value ? Math.round(distFromDisplay(num(kmEl.value))) : null;
+  const costo = parseFloat(num(document.getElementById('m-costo')?.value))||0;
+  try{
+    if(tipo==='soat'){
+      await mantRef().doc('soat').set({tipo:'soat',modo:'fecha',fechaBase:document.getElementById('m-fecha').value,kmRegistro,duracionMeses:12,costoEstimado:costo,periodicidad:'anual'});
+    } else if(tipo==='tecnomecanica'){
+      await mantRef().doc('tecnomecanica').set({tipo:'tecnomecanica',modo:'fecha',fechaBase:document.getElementById('m-fecha').value,vehicleYear:parseInt(num(document.getElementById('m-year').value))||null,kmRegistro,costoEstimado:costo,periodicidad:'anual'});
+    } else if(tipo==='seguro'){
+      await mantRef().doc('seguro').set({tipo:'seguro',modo:'fecha',fechaBase:document.getElementById('m-fecha').value,duracionMeses:parseInt(num(document.getElementById('m-dur').value))||12,kmRegistro,costoEstimado:costo,periodicidad:'anual'});
+    } else if(tipo==='aceite'){
+      const oilType = document.getElementById('m-oiltype').value||'semisintetico';
+      const kmBase = Math.round(distFromDisplay(num(kmEl.value)))||0;
+      await mantRef().doc('aceite').set({tipo:'aceite',modo:'kilometraje',kmBase,intervaloKm:(OIL_TYPES[oilType]||OIL_TYPES.semisintetico).km,oilType,costoEstimado:costo,periodicidad:'porKm'});
+    }
+    closeDialog('mant-modal');
+    toast('Guardado');
+  }catch{ toast('Error al guardar','err'); }
+});
 
 function openPagoModal(){
   document.getElementById('p-fecha').value = new Date().toISOString().slice(0,10);
