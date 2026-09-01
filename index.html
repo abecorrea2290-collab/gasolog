@@ -698,6 +698,15 @@ function costPerDistToDisplay(costPerKm){
 /* ════════════════════════════════════════════════════════════════
    FORMATO
 ════════════════════════════════════════════════════════════════ */
+// Parsea Timestamps de Firestore, Date, o strings 'YYYY-MM-DD' (sin desfase de zona horaria:
+// un string solo-fecha se interpreta como UTC medianoche por el spec de JS, y al mostrarlo en
+// una zona horaria negativa como Colombia se corre un día atrás — por eso se fija a mediodía).
+function parseTs(ts){
+  if(ts==null) return null;
+  if(ts?.toDate) return ts.toDate();
+  if(typeof ts==='string' && /^\d{4}-\d{2}-\d{2}$/.test(ts)) return new Date(ts+'T12:00:00');
+  return new Date(ts);
+}
 const fmt = {
   n: (v,d=1) => (isFinite(v)&&v!==null) ? Number(v).toLocaleString('es-CO',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—',
   int: (v) => (isFinite(v)&&v!==null) ? Math.round(v).toLocaleString('es-CO') : '—',
@@ -706,17 +715,17 @@ const fmt = {
     return new Intl.NumberFormat('es-CO',{style:'currency',currency:cfg.currency,maximumFractionDigits:0}).format(v);
   },
   date: (ts) => {
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
-    if(isNaN(d)) return '—';
+    const d = parseTs(ts);
+    if(!d || isNaN(d)) return '—';
     return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
   },
   dateShort: (ts) => {
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
-    if(isNaN(d)) return '—';
+    const d = parseTs(ts);
+    if(!d || isNaN(d)) return '—';
     return d.toLocaleDateString('es-CO',{day:'2-digit',month:'short'});
   },
   rel: (ts) => {
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    const d = parseTs(ts);
     const days = Math.floor((Date.now()-d)/86400000);
     if (days===0) return 'Hoy'; if (days===1) return 'Ayer';
     if (days<7) return 'Hace '+days+' días'; return fmt.date(ts);
@@ -771,6 +780,24 @@ function avgDailyKm(){
   const totalKm = records[records.length-1].odometer - records[0].odometer;
   const daysSpan = Math.max((dates[dates.length-1]-dates[0])/86400000, 1);
   return totalKm>0 ? totalKm/daysSpan : (cfg.dailyKm||40);
+}
+
+// Desglose del costo REAL de tener el carro: combustible + papeles/seguro + mantenimiento por
+// kilometraje (aceite), amortizados por mes — y el costo por km resultante de sumar TODO, no
+// solo el combustible. Es la misma cuenta que "Lo que cuesta tener el carro" en Mantenimiento.
+function costoRealDesglose(){
+  const byTipo = Object.fromEntries(mantenimiento.map(m=>[m.tipo,m]));
+  const dates = records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  const monthsSpan = dates.length>=2 ? Math.max((dates[dates.length-1]-dates[0])/(86400000*30.44),1) : null;
+  const totalCost = records.reduce((s,r)=>s+r.totalCost,0);
+  const combMensual = monthsSpan ? totalCost/monthsSpan : (records.length?totalCost:0);
+  const soat = byTipo.soat, seguro = byTipo.seguro, aceite = byTipo.aceite;
+  const papelesMensual = ((soat?.costoEstimado||0)/12) + ((seguro?.costoEstimado||0)*(seguro?.duracionMeses?12/seguro.duracionMeses:1)/12);
+  const mantMensual = aceite && aceite.costoEstimado && aceite.intervaloKm ? aceite.costoEstimado*(avgDailyKm()*30.44/aceite.intervaloKm) : 0;
+  const costoRealMensual = combMensual+papelesMensual+mantMensual;
+  const kmMensual = avgDailyKm()*30.44;
+  const costoRealPorKm = kmMensual>0 ? costoRealMensual/kmMensual : null;
+  return {combMensual, papelesMensual, mantMensual, costoRealMensual, costoRealPorKm};
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -1059,6 +1086,7 @@ function renderResumen(){
   const totalCost = records.reduce((s,r)=>s+r.totalCost,0);
   const totalKm = last.odometer - records[0].odometer;
   const costPerKm = totalKm>0 ? totalCost/(records.slice(1).reduce((s,r)=>s+(r.kmDriven||0),0)||totalKm) : null;
+  const costoReal = costoRealDesglose();
   const dates = records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
   const monthsSpan = dates.length>=2 ? Math.max((dates[dates.length-1]-dates[0])/(86400000*30.44),1) : null;
   const monthlyEst = monthsSpan ? totalCost/monthsSpan : null;
@@ -1106,7 +1134,7 @@ function renderResumen(){
         <div class="spark-foot"><span>${fmt.dateShort(dates[Math.max(0,dates.length-8)])}</span><span>promedio ${statKmL?fmt.n(effToDisplay(statKmL)):'—'}</span><span>${fmt.dateShort(dates[dates.length-1])}</span></div>
       </div>
       <div class="grid-auto-190">
-        <div class="card elev-sm stat-cell"><div class="lbl">Cada kilómetro te cuesta</div><div class="val">${costPerKm?fmt.money(costPerDistToDisplay(costPerKm)):'—'}</div><div class="ctx">${fmt.int(distToDisplay(avgDailyKm()))} ${distUnitLabel()} diarios (promedio real) · ${costPerKm?fmt.money(costPerDistToDisplay(costPerKm)*avgDailyKm()):'—'} al día</div></div>
+        <div class="card elev-sm stat-cell"><div class="lbl">Cada kilómetro te cuesta</div><div class="val">${costoReal.costoRealPorKm?fmt.money(costPerDistToDisplay(costoReal.costoRealPorKm)):(costPerKm?fmt.money(costPerDistToDisplay(costPerKm)):'—')}</div><div class="ctx">Combustible + SOAT + seguro + mantenimiento · ${fmt.int(distToDisplay(avgDailyKm()))} ${distUnitLabel()} diarios</div></div>
         <div class="card elev-sm stat-cell"><div class="lbl">Con el tanque lleno llegas a</div><div class="val">${rangoTanque?fmt.int(distToDisplay(rangoTanque)):'—'} ${distUnitLabel()}</div><div class="ctx">${diasAutonomia?'unos '+diasAutonomia+' días como manejas hoy':'—'}</div></div>
         <div class="card elev-sm stat-cell"><div class="lbl">Gasto del mes</div><div class="val">${fmt.money(gastoMes)}</div><div class="ctx">${thisMonthRecs.length} tanqueo${thisMonthRecs.length!==1?'s':''} este mes</div></div>
         <div class="card elev-sm stat-cell"><div class="lbl">Proyección mensual</div><div class="val">${monthlyEst?fmt.money(monthlyEst):'—'}</div><div class="ctx">al ritmo de los últimos tanqueos</div></div>
@@ -1319,8 +1347,8 @@ function mantPct(m){
 function mantMiniCell(m){
   const tag = mantEstadoTag(m);
   const fechaTxt = m.modo==='kilometraje'
-    ? (m.kmBase ? `desde ${fmt.int(distToDisplay(m.kmBase))} ${distUnitLabel()}` : '—')
-    : (m.fechaBase ? fmt.date(m.fechaBase) : '—');
+    ? `Toca a los ${fmt.int(distToDisplay((m.kmBase||0)+(m.intervaloKm||5000)))} ${distUnitLabel()}`
+    : (mantVenceISO(m) ? `Vence ${fmt.date(mantVenceISO(m))}` : (m.tipo==='tecnomecanica'&&m.vehicleYear&&tecnoMonths(parseInt(m.vehicleYear))===0?'Exento':'Sin datos'));
   return `<div class="paper-cell"><div class="nm">${mantLabel(m.tipo)}</div>
     <div class="plazo">${mantPlazoTexto(m)}</div>
     <div class="foot"><span>${fechaTxt}</span><span class="tag ${tag.cls}">${tag.label}</span></div></div>`;
@@ -1358,14 +1386,7 @@ function renderMantenimiento(){
 
   // Lo que cuesta tener el carro
   const statKmL = statAvgKmL();
-  const dates = records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
-  const monthsSpan = dates.length>=2 ? Math.max((dates[dates.length-1]-dates[0])/(86400000*30.44),1) : null;
-  const totalCost = records.reduce((s,r)=>s+r.totalCost,0);
-  const combMensual = monthsSpan ? totalCost/monthsSpan : (records.length?totalCost:0);
-  const soat = byTipo.soat, seguro = byTipo.seguro, aceite = byTipo.aceite;
-  const papelesMensual = ((soat?.costoEstimado||0)/12) + ((seguro?.costoEstimado||0)*(seguro?.duracionMeses?12/seguro.duracionMeses:1)/12);
-  const mantMensual = aceite && aceite.costoEstimado && aceite.intervaloKm ? aceite.costoEstimado*(avgDailyKm()*30.44/aceite.intervaloKm) : 0;
-  const costoRealMensual = combMensual+papelesMensual+mantMensual;
+  const {combMensual, papelesMensual, mantMensual, costoRealMensual, costoRealPorKm} = costoRealDesglose();
   const pctComb = costoRealMensual>0 ? Math.round((combMensual/costoRealMensual)*100) : 0;
   const pctPapeles = costoRealMensual>0 ? Math.round((papelesMensual/costoRealMensual)*100) : 0;
   const pctMant = Math.max(0,100-pctComb-pctPapeles);
@@ -1391,7 +1412,9 @@ function renderMantenimiento(){
         <div class="stat-cell sm" style="padding:0"><div class="lbl">Papeles y seguro / mes</div><div class="val" style="font-size:20px">${fmt.money(papelesMensual)}</div></div>
         <div class="stat-cell sm" style="padding:0"><div class="lbl">Mantenimiento / mes</div><div class="val" style="font-size:20px">${fmt.money(mantMensual)}</div></div>
         <div class="stat-cell sm" style="padding:0"><div class="lbl" style="color:var(--color-accent-300)">Total real / mes</div><div class="val" style="font-size:20px">${fmt.money(costoRealMensual)}</div></div>
+        <div class="stat-cell sm" style="padding:0"><div class="lbl" style="color:var(--color-accent-300)">Costo real / ${distUnitLabel()}</div><div class="val" style="font-size:20px">${costoRealPorKm?fmt.money(costPerDistToDisplay(costoRealPorKm)):'—'}</div></div>
       </div>
+      <div style="font-size:11px;color:var(--color-text-dim)">Incluye combustible, SOAT, seguro y mantenimiento por kilometraje — no solo la gasolina.</div>
     </div>
 
     <div class="card elev-sm" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
@@ -1625,18 +1648,38 @@ function renderAjustes(){
   </div>
   `;
 
-  bindSeg('seg-dist'); bindSeg('seg-vol'); bindSeg('seg-currency'); bindSeg('seg-aviso');
+  bindSeg('seg-dist', val=>applyUnitChange('dist', val));
+  bindSeg('seg-vol', val=>applyUnitChange('vol', val));
+  bindSeg('seg-currency'); bindSeg('seg-aviso');
   document.getElementById('station-form').addEventListener('submit', e=>{ e.preventDefault(); addEstacion(); });
   attachFormatter(document.getElementById('cfg-meta'), miles);
   attachFormatter(document.getElementById('cfg-tank'), miles);
   const cfgDailyEl = document.getElementById('cfg-daily');
   if(cfgDailyEl) attachFormatter(cfgDailyEl, miles);
 }
-function bindSeg(id){
+function bindSeg(id, onChange){
   const seg=document.getElementById(id);
   seg.querySelectorAll('.seg-opt').forEach(b=>b.addEventListener('click',()=>{
     seg.querySelectorAll('.seg-opt').forEach(x=>x.setAttribute('aria-pressed', x===b?'true':'false'));
+    if(onChange) onChange(b.dataset.val);
   }));
+}
+// Aplica el cambio de unidad de inmediato en toda la app (Resumen, Historial, Mantenimiento,
+// Análisis, el modal de tanqueo, etc.) sin esperar a que se pulse "Guardar" — los registros
+// se guardan siempre en canónico (km, L) y solo se convierten al presentar.
+async function applyUnitChange(kind, val){
+  if(kind==='dist') cfg.distUnit = val; else cfg.volUnit = val;
+  try{ await persistCfg(); }catch{}
+  toast('Unidades actualizadas');
+  if(activeView==='ajustes'){
+    // refresco puntual, sin perder lo que el usuario esté escribiendo en otros campos del formulario
+    const hint = document.querySelector('#seg-vol').closest('.card').querySelector('.field-hint');
+    if(hint) hint.innerHTML = `Se combinan libres: hoy verás el rendimiento en <b>${effUnitLabel()}</b>.`;
+    const dailyDisplay = document.getElementById('cfg-daily-display');
+    if(dailyDisplay) dailyDisplay.value = fmt.int(distToDisplay(avgDailyKm()))+' '+distUnitLabel();
+  } else {
+    renderView();
+  }
 }
 function escAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
 
