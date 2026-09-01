@@ -762,6 +762,17 @@ function statAvgKmL(){
   return totalL>0 ? totalKm/totalL : null;
 }
 
+// Km diarios promedio REAL: km totales recorridos / días transcurridos entre el primer y último tanqueo.
+// Con menos de 2 tanqueos no hay suficiente historia — se usa cfg.dailyKm (manual) como respaldo.
+function avgDailyKm(){
+  if(records.length<2) return cfg.dailyKm||40;
+  const dates = records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  if(dates.length<2) return cfg.dailyKm||40;
+  const totalKm = records[records.length-1].odometer - records[0].odometer;
+  const daysSpan = Math.max((dates[dates.length-1]-dates[0])/86400000, 1);
+  return totalKm>0 ? totalKm/daysSpan : (cfg.dailyKm||40);
+}
+
 /* ════════════════════════════════════════════════════════════════
    AUTH
 ════════════════════════════════════════════════════════════════ */
@@ -1017,11 +1028,11 @@ function tanqueoReminderInfo(){
   if(!statKmL) return null;
   const last = records[records.length-1];
   const rangoTanque = cfg.tankCap*statKmL;
-  const diasDeTanque = rangoTanque/(cfg.dailyKm||40);
+  const diasDeTanque = rangoTanque/avgDailyKm();
   const lastDate = last.date?.toDate?last.date.toDate():new Date(last.date);
   const diasDesdeUltimo = (Date.now()-lastDate)/86400000;
   const diasParaTanquear = diasDeTanque - diasDesdeUltimo;
-  const kmEstimado = last.odometer + (cfg.dailyKm||40)*Math.max(diasParaTanquear,0);
+  const kmEstimado = last.odometer + avgDailyKm()*Math.max(diasParaTanquear,0);
   const fechaEstimada = new Date(Date.now()+Math.max(diasParaTanquear,0)*86400000);
   return {diasParaTanquear, kmEstimado, fechaEstimada, rangoTanque};
 }
@@ -1052,7 +1063,7 @@ function renderResumen(){
   const monthsSpan = dates.length>=2 ? Math.max((dates[dates.length-1]-dates[0])/(86400000*30.44),1) : null;
   const monthlyEst = monthsSpan ? totalCost/monthsSpan : null;
   const rangoTanque = statKmL ? statKmL*cfg.tankCap : null;
-  const diasAutonomia = rangoTanque ? Math.round(rangoTanque/(cfg.dailyKm||40)) : null;
+  const diasAutonomia = rangoTanque ? Math.round(rangoTanque/avgDailyKm()) : null;
 
   // gasto del mes en curso
   const now=new Date();
@@ -1095,7 +1106,7 @@ function renderResumen(){
         <div class="spark-foot"><span>${fmt.dateShort(dates[Math.max(0,dates.length-8)])}</span><span>promedio ${statKmL?fmt.n(effToDisplay(statKmL)):'—'}</span><span>${fmt.dateShort(dates[dates.length-1])}</span></div>
       </div>
       <div class="grid-auto-190">
-        <div class="card elev-sm stat-cell"><div class="lbl">Cada kilómetro te cuesta</div><div class="val">${costPerKm?fmt.money(costPerDistToDisplay(costPerKm)):'—'}</div><div class="ctx">${cfg.dailyKm||40} ${distUnitLabel()} diarios · ${costPerKm?fmt.money(costPerDistToDisplay(costPerKm)*(cfg.dailyKm||40)):'—'} al día</div></div>
+        <div class="card elev-sm stat-cell"><div class="lbl">Cada kilómetro te cuesta</div><div class="val">${costPerKm?fmt.money(costPerDistToDisplay(costPerKm)):'—'}</div><div class="ctx">${fmt.int(distToDisplay(avgDailyKm()))} ${distUnitLabel()} diarios (promedio real) · ${costPerKm?fmt.money(costPerDistToDisplay(costPerKm)*avgDailyKm()):'—'} al día</div></div>
         <div class="card elev-sm stat-cell"><div class="lbl">Con el tanque lleno llegas a</div><div class="val">${rangoTanque?fmt.int(distToDisplay(rangoTanque)):'—'} ${distUnitLabel()}</div><div class="ctx">${diasAutonomia?'unos '+diasAutonomia+' días como manejas hoy':'—'}</div></div>
         <div class="card elev-sm stat-cell"><div class="lbl">Gasto del mes</div><div class="val">${fmt.money(gastoMes)}</div><div class="ctx">${thisMonthRecs.length} tanqueo${thisMonthRecs.length!==1?'s':''} este mes</div></div>
         <div class="card elev-sm stat-cell"><div class="lbl">Proyección mensual</div><div class="val">${monthlyEst?fmt.money(monthlyEst):'—'}</div><div class="ctx">al ritmo de los últimos tanqueos</div></div>
@@ -1265,7 +1276,7 @@ function mantDiasRestantes(m){
     if(!m.kmBase || !lastOdo) return null;
     const kmObjetivo = m.kmBase + (m.intervaloKm||5000);
     const kmRestante = kmObjetivo - lastOdo;
-    return Math.ceil(kmRestante/(cfg.dailyKm||40));
+    return Math.ceil(kmRestante/avgDailyKm());
   }
   const exp = mantVenceISO(m);
   return exp ? daysUntil(exp) : null;
@@ -1353,7 +1364,7 @@ function renderMantenimiento(){
   const combMensual = monthsSpan ? totalCost/monthsSpan : (records.length?totalCost:0);
   const soat = byTipo.soat, seguro = byTipo.seguro, aceite = byTipo.aceite;
   const papelesMensual = ((soat?.costoEstimado||0)/12) + ((seguro?.costoEstimado||0)*(seguro?.duracionMeses?12/seguro.duracionMeses:1)/12);
-  const mantMensual = aceite && aceite.costoEstimado && aceite.intervaloKm ? aceite.costoEstimado*((cfg.dailyKm||40)*30.44/aceite.intervaloKm) : 0;
+  const mantMensual = aceite && aceite.costoEstimado && aceite.intervaloKm ? aceite.costoEstimado*(avgDailyKm()*30.44/aceite.intervaloKm) : 0;
   const costoRealMensual = combMensual+papelesMensual+mantMensual;
   const pctComb = costoRealMensual>0 ? Math.round((combMensual/costoRealMensual)*100) : 0;
   const pctPapeles = costoRealMensual>0 ? Math.round((papelesMensual/costoRealMensual)*100) : 0;
@@ -1538,8 +1549,16 @@ function renderAjustes(){
       <div class="field"><label>Nombre</label><input class="input" id="cfg-vehicle" value="${escAttr(cfg.vehicle)}" maxlength="40"/></div>
       <div class="grid-2">
         <div class="field"><label>Tanque lleno (L)</label><input class="input" type="text" inputmode="numeric" id="cfg-tank" value="${cfg.tankCap}"/></div>
-        <div class="field"><label>Km diarios</label><input class="input" type="text" inputmode="numeric" id="cfg-daily" value="${cfg.dailyKm}"/></div>
+        <div class="field">
+          <label>Km diarios</label>
+          ${records.length>=2
+            ? `<input class="input" type="text" id="cfg-daily-display" value="${fmt.int(distToDisplay(avgDailyKm()))} ${distUnitLabel()}" disabled/>`
+            : `<input class="input" type="text" inputmode="numeric" id="cfg-daily" value="${cfg.dailyKm}"/>`}
+        </div>
       </div>
+      <div style="font-size:11px;color:var(--color-text-dim)">${records.length>=2
+        ? 'Calculado automáticamente: km totales recorridos ÷ días entre tu primer y último tanqueo.'
+        : 'Valor manual — se reemplaza por un promedio real en cuanto tengas al menos 2 tanqueos.'}</div>
       <div class="field"><label>Distancia</label>
         <div class="seg" id="seg-dist">
           <button type="button" class="seg-opt" data-val="km" aria-pressed="${cfg.distUnit==='km'}">Kilómetros</button>
@@ -1610,7 +1629,8 @@ function renderAjustes(){
   document.getElementById('station-form').addEventListener('submit', e=>{ e.preventDefault(); addEstacion(); });
   attachFormatter(document.getElementById('cfg-meta'), miles);
   attachFormatter(document.getElementById('cfg-tank'), miles);
-  attachFormatter(document.getElementById('cfg-daily'), miles);
+  const cfgDailyEl = document.getElementById('cfg-daily');
+  if(cfgDailyEl) attachFormatter(cfgDailyEl, miles);
 }
 function bindSeg(id){
   const seg=document.getElementById(id);
@@ -1623,7 +1643,8 @@ function escAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
 async function saveVehicleCfg(){
   cfg.vehicle = document.getElementById('cfg-vehicle').value.trim()||'Mi Vehículo';
   cfg.tankCap = num(document.getElementById('cfg-tank').value)||50;
-  cfg.dailyKm = num(document.getElementById('cfg-daily').value)||40;
+  const cfgDailyInput = document.getElementById('cfg-daily');
+  if(cfgDailyInput) cfg.dailyKm = num(cfgDailyInput.value)||40; // solo aplica con <2 tanqueos; luego avgDailyKm() manda
   cfg.distUnit = document.querySelector('#seg-dist .seg-opt[aria-pressed="true"]').dataset.val;
   cfg.volUnit = document.querySelector('#seg-vol .seg-opt[aria-pressed="true"]').dataset.val;
   cfg.currency = document.querySelector('#seg-currency .seg-opt[aria-pressed="true"]').dataset.val;
@@ -1694,7 +1715,7 @@ function openAddModal(opener){
 
   const last = records.length ? records[records.length-1] : null;
   const statKmL = statAvgKmL();
-  const estOdo = last ? last.odometer + Math.round((cfg.dailyKm||40) * ((Date.now()-(last.date?.toDate?last.date.toDate():new Date(last.date)))/86400000)) : '';
+  const estOdo = last ? last.odometer + Math.round(avgDailyKm() * ((Date.now()-(last.date?.toDate?last.date.toDate():new Date(last.date)))/86400000)) : '';
   document.getElementById('f-odo').value = last ? miles(String(Math.round(distToDisplay(estOdo)))) : '';
   document.getElementById('f-odo-hint').textContent = last ? `Último: ${fmt.int(distToDisplay(last.odometer))} ${distUnitLabel()} · estimado hoy ${fmt.int(distToDisplay(estOdo))} ${distUnitLabel()}` : 'Este será tu primer tanqueo';
 
