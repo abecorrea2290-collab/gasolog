@@ -614,6 +614,7 @@ let unsubRecs=null, unsubEst=null, unsubMant=null, unsubPagos=null, unsubViajes=
 let activeView = 'resumen';
 let loading = true;
 let lastAddOpener = null; // para devolver el foco al cerrar el modal
+let editingRecordId = null; // id del tanqueo en edición (null = alta nueva)
 
 const DEFAULT_CFG = {
   vehicle:'Mi Vehículo', currency:'COP',
@@ -648,15 +649,32 @@ const miles = (raw) => {
   const d = String(raw).replace(/\D/g, "").replace(/^0+(?=\d)/, "");
   return d ? Number(d).toLocaleString("es-CO") : "";
 };
-// Con decimal: volumen (acepta "34,8")
+// Con decimal: volumen (acepta "34,875"). Hasta 3 decimales — el surtidor da 3, y truncar
+// a menos redondea la cantidad de combustible, que es justo lo que no se debe hacer.
+const VOL_DECIMALS = 3;
 const milesDec = (raw) => {
-  let s = String(raw).replace(/[^\d,]/g, "");
+  // Se acepta tanto coma como punto como separador decimal al escribir; el punto solo se
+  // interpreta como decimal si no hay coma (si hay coma, los puntos son separadores de miles).
+  let s = String(raw);
+  if(!s.includes(',') && (s.match(/\./g)||[]).length===1 && /\.\d{1,3}$/.test(s)) s = s.replace('.', ',');
+  s = s.replace(/[^\d,]/g, "");
   const parts = s.split(",");
   const ent = miles(parts[0]);
-  return parts.length > 1 ? ent + "," + parts[1].slice(0, 2) : ent;
+  return parts.length > 1 ? ent + "," + parts[1].slice(0, VOL_DECIMALS) : ent;
 };
 // Volver a número para calcular
 const num = (txt) => Number(String(txt).replace(/\./g, "").replace(",", ".")) || 0;
+// Número -> texto para un input con formato de miles y coma decimal (sin redondear de más)
+const numToInput = (v, dec=VOL_DECIMALS) => {
+  if(v==null || !isFinite(v)) return '';
+  const s = Number(v).toFixed(dec).replace(/0+$/,'').replace(/\.$/,'');
+  return milesDec(s.replace('.', ','));
+};
+// Muestra un volumen con hasta 3 decimales, sin ceros de relleno ("34,8" y no "34,800")
+const fmtVol = (v) => {
+  if(v==null || !isFinite(v)) return '—';
+  return Number(v).toLocaleString('es-CO',{minimumFractionDigits:0, maximumFractionDigits:VOL_DECIMALS});
+};
 
 // Cuenta cuántos caracteres "separador" (puntos) hay antes de una posición en un string
 function sepsBefore(str, pos){
@@ -987,6 +1005,36 @@ async function addRecord(data){
 async function deleteRecord(id){
   setSyncStatus('syncing','Eliminando…');
   await recsRef().doc(id).delete();
+  await recalcDerivados([id]);
+}
+async function updateRecord(id, data){
+  setSyncStatus('syncing','Guardando…');
+  await recsRef().doc(id).update(data);
+  await recalcDerivados();
+}
+
+// Recalcula km recorridos y rendimiento de TODOS los registros en orden de odómetro y escribe
+// solo los que cambiaron. Se llama tras editar o borrar un tanqueo, porque esos campos dependen
+// del registro anterior: al cambiar uno, el siguiente queda mal si no se recalcula.
+async function recalcDerivados(idsExcluidos=[]){
+  const orden = records
+    .filter(r=>!idsExcluidos.includes(r.id))
+    .slice()
+    .sort((a,b)=>a.odometer-b.odometer);
+  const batch = db.batch();
+  let cambios = 0;
+  orden.forEach((r, i)=>{
+    const prev = i>0 ? orden[i-1] : null;
+    const kmDriven = prev ? r.odometer-prev.odometer : null;
+    const eff = kmDriven ? calcEff(kmDriven, r.liters) : null;
+    const kmL = eff ? eff.kmL : null;
+    const galKm = eff ? eff.galKm : null;
+    if(r.kmDriven!==kmDriven || r.kmL!==kmL){
+      batch.update(recsRef().doc(r.id), {kmDriven, kmL, galKm});
+      cambios++;
+    }
+  });
+  if(cambios) { try{ await batch.commit(); }catch(e){} }
 }
 async function loadConfig(){
   try{ const s=await configRef().get(); if(s.exists) cfg={...DEFAULT_CFG,...s.data()}; }catch{}
@@ -1184,7 +1232,7 @@ function renderResumen(){
         <div class="rowlist-hdr"><h5 style="margin-right:auto">Últimos tanqueos</h5><button class="btn btn-ghost" onclick="showView('historial')">Ver todo</button></div>
         ${recientes.map(r=>`<div class="rowitem gl-row">
           <div><div class="ti">${fmt.rel(r.date)} · ${fmt.int(distToDisplay(r.odometer))} ${distUnitLabel()}</div>
-          <div class="su">${r.kmDriven?fmt.int(distToDisplay(r.kmDriven))+' '+distUnitLabel()+' · ':''}${fmt.n(volToDisplay(r.liters),1)} ${volUnitLabel()} · ${fmt.money(r.totalCost)}${r.estacionNombre?' · '+r.estacionNombre:''}</div></div>
+          <div class="su">${r.kmDriven?fmt.int(distToDisplay(r.kmDriven))+' '+distUnitLabel()+' · ':''}${fmtVol(volToDisplay(r.liters))} ${volUnitLabel()} · ${fmt.money(r.totalCost)}${r.estacionNombre?' · '+r.estacionNombre:''}</div></div>
           <div><div class="kv">${r.kmL?fmt.n(effToDisplay(r.kmL)):'—'}</div><div class="ku">${effUnitLabel()}</div></div>
         </div>`).join('')}
       </div>
@@ -1256,12 +1304,16 @@ function renderHistorial(){
             <td>${fmt.date(r.date)}${r.estacionNombre?`<div class="ku" style="color:var(--color-text-dimmer);font-size:11px">${r.estacionNombre}</div>`:''}</td>
             <td class="num">${fmt.int(distToDisplay(r.odometer))}</td>
             <td class="num">${r.kmDriven?fmt.int(distToDisplay(r.kmDriven))+' '+distUnitLabel():'—'}</td>
-            <td class="num">${fmt.n(volToDisplay(r.liters),1)} ${volUnitLabel()}</td>
+            <td class="num">${fmtVol(volToDisplay(r.liters))} ${volUnitLabel()}</td>
             <td class="num">${fmt.money(r.totalCost)}</td>
             <td class="num" style="font-weight:600">${r.kmL?fmt.n(effToDisplay(r.kmL)):'—'}</td>
-            <td><span class="tag ${v.cls}">${v.label}</span> <button class="btn-icon" onclick="confirmDel('${r.id}')" title="Eliminar" aria-label="Eliminar tanqueo">
-              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16"/></svg>
-            </button></td>
+            <td><span class="tag ${v.cls}">${v.label}</span>
+              <button class="btn-icon" onclick="editRecord('${r.id}')" title="Editar" aria-label="Editar tanqueo">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+              </button>
+              <button class="btn-icon" onclick="confirmDel('${r.id}')" title="Eliminar" aria-label="Eliminar tanqueo">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16"/></svg>
+              </button></td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>
@@ -1408,7 +1460,11 @@ function renderMantenimiento(){
       <div class="progress-track" style="height:6px"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div class="maint-foot"><span>${fecha}</span><span>${costo}</span></div>
       ${kmLine}${diasLine}
-      <button class="btn btn-ghost" style="align-self:flex-start" onclick="editMant('${tipo}')">Editar</button>
+      <div style="display:flex;gap:5.6px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" onclick="editMant('${tipo}','renovar')">${tipo==='aceite'?'Registrar cambio':'Renovar'}</button>
+        <button class="btn btn-ghost" onclick="editMant('${tipo}')">Editar</button>
+        <button class="btn btn-ghost" style="color:var(--danger);margin-left:auto" onclick="deleteMant('${tipo}')">Borrar</button>
+      </div>
     </div>`;
   }).join('');
 
@@ -1448,8 +1504,11 @@ function renderMantenimiento(){
     <div class="card elev-sm" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
       <h5 style="padding:0 22.4px 8.4px">Pagos registrados</h5>
       <div class="tbl-wrap"><table class="table" style="min-width:560px">
-        <thead><tr><th>Fecha</th><th>Concepto</th><th>Detalle</th><th class="num">Valor</th></tr></thead>
-        <tbody>${pagos.length ? pagos.map(p=>`<tr><td>${fmt.date(p.fecha)}</td><td>${p.concepto}</td><td style="color:var(--color-text-dim)">${p.detalle||''}</td><td class="num">${fmt.money(p.valor)}</td></tr>`).join('') : `<tr><td colspan="4" style="text-align:center;color:var(--color-text-dimmer)">Sin pagos registrados</td></tr>`}</tbody>
+        <thead><tr><th>Fecha</th><th>Concepto</th><th>Detalle</th><th class="num">Valor</th><th></th></tr></thead>
+        <tbody>${pagos.length ? pagos.map(p=>`<tr><td>${fmt.date(p.fecha)}</td><td>${p.concepto}</td><td style="color:var(--color-text-dim)">${p.detalle||''}</td><td class="num">${fmt.money(p.valor)}</td>
+          <td><button class="btn-icon" onclick="deletePago('${p.id}')" title="Borrar pago" aria-label="Borrar pago">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16"/></svg>
+          </button></td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--color-text-dimmer)">Sin pagos registrados</td></tr>`}</tbody>
       </table></div>
     </div>
   `;
@@ -1471,39 +1530,56 @@ function mantSetupCard(tipo){
 // Campo común "Kilometraje al registrar" para SOAT/tecnomecánica/seguro: el odómetro en el
 // momento del trámite — puramente informativo, no afecta el cálculo de vencimiento (que es por
 // fecha), pero queda guardado para consulta y para el histórico de pagos.
-function editMant(tipo){
-  const m = mantenimiento.find(x=>x.tipo===tipo) || {tipo};
-  document.getElementById('mant-form').dataset.tipo = tipo;
+// modo 'editar'  -> corrige los datos actuales
+// modo 'renovar' -> precarga la fecha de hoy y el odómetro actual, para registrar la renovación
+//                   en dos toques y (opcionalmente) dejar el pago en el histórico.
+function editMant(tipo, modo='editar'){
+  const guardado = mantenimiento.find(x=>x.tipo===tipo) || {tipo};
+  const renovar = modo==='renovar';
+  const hoy = new Date().toISOString().slice(0,10);
+  const odoActual = records.length ? records[records.length-1].odometer : null;
+  // En renovación arrancamos de valores frescos, conservando lo que no cambia (costo, año, duración)
+  const m = renovar
+    ? {...guardado, fechaBase:hoy, kmRegistro:odoActual, kmBase:odoActual}
+    : guardado;
+
+  const form = document.getElementById('mant-form');
+  form.dataset.tipo = tipo;
+  form.dataset.modo = modo;
+
   const kmFieldHtml = (labelExtra)=>`<div class="field"><label>Kilometraje ${labelExtra} (${distUnitLabel()}, opcional)</label><input class="input" type="text" inputmode="numeric" id="m-km" value="${m.kmRegistro?miles(String(Math.round(distToDisplay(m.kmRegistro)))):''}"/></div>`;
+  const costoFieldHtml = `<div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
   let title, html;
   if(tipo==='soat'){
-    title = 'Editar SOAT';
+    title = renovar ? 'Renovar SOAT' : 'Editar SOAT';
     html = `
       <div class="field"><label>Fecha de compra</label><input class="input" type="date" id="m-fecha" value="${m.fechaBase||''}" required/></div>
-      ${kmFieldHtml('al comprar')}
-      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
+      ${kmFieldHtml('al comprar')}${costoFieldHtml}`;
   } else if(tipo==='tecnomecanica'){
-    title = 'Editar tecnomecánica';
+    title = renovar ? 'Renovar tecnomecánica' : 'Editar tecnomecánica';
     html = `
       <div class="field"><label>Año modelo del vehículo</label><input class="input" type="text" inputmode="numeric" id="m-year" value="${m.vehicleYear||''}" required/></div>
       <div class="field"><label>Fecha de la última revisión</label><input class="input" type="date" id="m-fecha" value="${m.fechaBase||''}" required/></div>
-      ${kmFieldHtml('en la revisión')}
-      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
+      ${kmFieldHtml('en la revisión')}${costoFieldHtml}`;
   } else if(tipo==='seguro'){
-    title = 'Editar seguro todo riesgo';
+    title = renovar ? 'Renovar seguro' : 'Editar seguro todo riesgo';
     html = `
       <div class="field"><label>Fecha de inicio de la póliza</label><input class="input" type="date" id="m-fecha" value="${m.fechaBase||''}" required/></div>
       <div class="field"><label>Duración (meses)</label><input class="input" type="text" inputmode="numeric" id="m-dur" value="${m.duracionMeses||12}" required/></div>
-      ${kmFieldHtml('al iniciar')}
-      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
+      ${kmFieldHtml('al iniciar')}${costoFieldHtml}`;
   } else if(tipo==='aceite'){
-    title = 'Editar cambio de aceite';
+    title = renovar ? 'Registrar cambio de aceite' : 'Editar cambio de aceite';
     html = `
-      <div class="field"><label>Kilometraje del último cambio (${distUnitLabel()})</label><input class="input" type="text" inputmode="numeric" id="m-km" value="${m.kmBase?miles(String(Math.round(distToDisplay(m.kmBase)))):''}" required/></div>
+      <div class="field"><label>Kilometraje del cambio (${distUnitLabel()})</label><input class="input" type="text" inputmode="numeric" id="m-km" value="${m.kmBase?miles(String(Math.round(distToDisplay(m.kmBase)))):''}" required/></div>
       <div class="field"><label>Tipo de aceite</label><select class="input" id="m-oiltype">
         ${Object.entries(OIL_TYPES).map(([k,v])=>`<option value="${k}" ${m.oilType===k?'selected':''}>${v.label||k} (cada ${v.km.toLocaleString()} km)</option>`).join('')}
       </select></div>
-      <div class="field"><label>Costo</label><input class="input" type="text" inputmode="numeric" id="m-costo" value="${m.costoEstimado?miles(String(m.costoEstimado)):''}"/></div>`;
+      ${costoFieldHtml}`;
+  }
+  // En renovación se ofrece dejar constancia del pago en el histórico
+  if(renovar){
+    html += `<label class="radio" style="gap:8px"><input type="checkbox" id="m-registrar-pago" checked style="position:static;opacity:1;width:16px;height:16px;pointer-events:auto"/>
+      <span style="font-size:13px">Registrar también el pago en el histórico</span></label>`;
   }
   document.getElementById('mant-modal-title').textContent = title;
   document.getElementById('mant-form-fields').innerHTML = html;
@@ -1513,25 +1589,45 @@ function editMant(tipo){
 document.getElementById('mant-form').addEventListener('submit', async e=>{
   e.preventDefault();
   const tipo = e.target.dataset.tipo;
+  const renovar = e.target.dataset.modo==='renovar';
   const kmEl = document.getElementById('m-km');
   const kmRegistro = kmEl && kmEl.value ? Math.round(distFromDisplay(num(kmEl.value))) : null;
   const costo = parseFloat(num(document.getElementById('m-costo')?.value))||0;
+  const fechaEl = document.getElementById('m-fecha');
   try{
     if(tipo==='soat'){
-      await mantRef().doc('soat').set({tipo:'soat',modo:'fecha',fechaBase:document.getElementById('m-fecha').value,kmRegistro,duracionMeses:12,costoEstimado:costo,periodicidad:'anual'});
+      await mantRef().doc('soat').set({tipo:'soat',modo:'fecha',fechaBase:fechaEl.value,kmRegistro,duracionMeses:12,costoEstimado:costo,periodicidad:'anual'});
     } else if(tipo==='tecnomecanica'){
-      await mantRef().doc('tecnomecanica').set({tipo:'tecnomecanica',modo:'fecha',fechaBase:document.getElementById('m-fecha').value,vehicleYear:parseInt(num(document.getElementById('m-year').value))||null,kmRegistro,costoEstimado:costo,periodicidad:'anual'});
+      await mantRef().doc('tecnomecanica').set({tipo:'tecnomecanica',modo:'fecha',fechaBase:fechaEl.value,vehicleYear:parseInt(num(document.getElementById('m-year').value))||null,kmRegistro,costoEstimado:costo,periodicidad:'anual'});
     } else if(tipo==='seguro'){
-      await mantRef().doc('seguro').set({tipo:'seguro',modo:'fecha',fechaBase:document.getElementById('m-fecha').value,duracionMeses:parseInt(num(document.getElementById('m-dur').value))||12,kmRegistro,costoEstimado:costo,periodicidad:'anual'});
+      await mantRef().doc('seguro').set({tipo:'seguro',modo:'fecha',fechaBase:fechaEl.value,duracionMeses:parseInt(num(document.getElementById('m-dur').value))||12,kmRegistro,costoEstimado:costo,periodicidad:'anual'});
     } else if(tipo==='aceite'){
       const oilType = document.getElementById('m-oiltype').value||'semisintetico';
       const kmBase = Math.round(distFromDisplay(num(kmEl.value)))||0;
       await mantRef().doc('aceite').set({tipo:'aceite',modo:'kilometraje',kmBase,intervaloKm:(OIL_TYPES[oilType]||OIL_TYPES.semisintetico).km,oilType,costoEstimado:costo,periodicidad:'porKm'});
     }
+    if(renovar && document.getElementById('m-registrar-pago')?.checked && costo>0){
+      const kmTxt = kmRegistro ? `${fmt.int(distToDisplay(kmRegistro))} ${distUnitLabel()}` : '';
+      await pagosRef().add({
+        fecha: tipo==='aceite' ? new Date().toISOString().slice(0,10) : fechaEl.value,
+        concepto: mantLabel(tipo), detalle: kmTxt, valor: costo,
+      });
+    }
     closeDialog('mant-modal');
-    toast('Guardado');
+    toast(renovar ? 'Renovación registrada' : 'Guardado');
   }catch{ toast('Error al guardar','err'); }
 });
+
+async function deleteMant(tipo){
+  if(!confirm(`¿Borrar los datos de ${mantLabel(tipo)}? Los pagos registrados no se borran.`)) return;
+  try{ await mantRef().doc(tipo).delete(); toast('Datos borrados'); }
+  catch{ toast('Error al borrar','err'); }
+}
+async function deletePago(id){
+  if(!confirm('¿Borrar este pago del histórico?')) return;
+  try{ await pagosRef().doc(id).delete(); toast('Pago borrado'); }
+  catch{ toast('Error al borrar','err'); }
+}
 
 function openPagoModal(){
   document.getElementById('p-fecha').value = new Date().toISOString().slice(0,10);
@@ -1843,44 +1939,61 @@ function estacionesComparativa(){
 const addModal = document.getElementById('add-modal');
 const addDialog = document.getElementById('add-modal-dialog');
 document.getElementById('btn-open-add').addEventListener('click', e=>openAddModal(e.currentTarget));
-document.getElementById('btn-cancel-add').addEventListener('click', ()=>closeDialog('add-modal'));
-addModal.addEventListener('click', e=>{ if(e.target===addModal) closeDialog('add-modal'); });
+document.getElementById('btn-cancel-add').addEventListener('click', ()=>{ editingRecordId=null; closeDialog('add-modal'); });
+addModal.addEventListener('click', e=>{ if(e.target===addModal){ editingRecordId=null; closeDialog('add-modal'); } });
 
-function openAddModal(opener){
+// rec = registro existente -> abre en modo edición; sin rec -> alta nueva
+function openAddModal(opener, rec){
   lastAddOpener = opener || document.activeElement;
-  const now=new Date();
+  editingRecordId = rec ? rec.id : null;
   const pad=n=>String(n).padStart(2,'0');
-  document.getElementById('f-date').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const toLocalInput = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const fecha = rec ? (rec.date?.toDate?rec.date.toDate():new Date(rec.date)) : new Date();
+  document.getElementById('f-date').value = toLocalInput(fecha);
 
+  document.getElementById('add-modal-title').textContent = rec ? 'Editar tanqueo' : 'Registrar tanqueo';
+  document.querySelector('#add-modal .dialog-sub').textContent = rec ? 'Corrige lo que necesites y guarda.' : 'Tres datos y listo.';
+  document.getElementById('add-btn').textContent = rec ? 'Guardar cambios' : 'Guardar tanqueo';
   document.getElementById('f-odo-label').textContent = 'Odómetro ('+distUnitLabel()+')';
   document.getElementById('f-liters-label').textContent = volUnitLabel()==='gal'?'Galones':'Litros';
   document.getElementById('f-price-label').textContent = volUnitLabel()==='gal'?'Precio por galón':'Precio por litro';
 
   const last = records.length ? records[records.length-1] : null;
-  const statKmL = statAvgKmL();
   const estOdo = last ? last.odometer + Math.round(avgDailyKm() * ((Date.now()-(last.date?.toDate?last.date.toDate():new Date(last.date)))/86400000)) : '';
-  document.getElementById('f-odo').value = last ? miles(String(Math.round(distToDisplay(estOdo)))) : '';
-  document.getElementById('f-odo-hint').textContent = last ? `Último: ${fmt.int(distToDisplay(last.odometer))} ${distUnitLabel()} · estimado hoy ${fmt.int(distToDisplay(estOdo))} ${distUnitLabel()}` : 'Este será tu primer tanqueo';
+  if(rec){
+    document.getElementById('f-odo').value = miles(String(Math.round(distToDisplay(rec.odometer))));
+    document.getElementById('f-odo-hint').textContent = 'Editando un tanqueo ya registrado.';
+  } else {
+    document.getElementById('f-odo').value = last ? miles(String(Math.round(distToDisplay(estOdo)))) : '';
+    document.getElementById('f-odo-hint').textContent = last ? `Último: ${fmt.int(distToDisplay(last.odometer))} ${distUnitLabel()} · estimado hoy ${fmt.int(distToDisplay(estOdo))} ${distUnitLabel()}` : 'Este será tu primer tanqueo';
+  }
 
-  document.getElementById('f-liters').value = '';
-  document.getElementById('f-tank-chip').textContent = 'Tanque lleno · '+fmt.n(volToDisplay(cfg.tankCap),0);
-  document.getElementById('f-tank-chip').onclick = ()=>{ document.getElementById('f-liters').value = milesDec(String(volToDisplay(cfg.tankCap))); updatePreview(); };
+  document.getElementById('f-liters').value = rec ? numToInput(volToDisplay(rec.liters)) : '';
+  document.getElementById('f-tank-chip').textContent = 'Tanque lleno · '+fmtVol(volToDisplay(cfg.tankCap));
+  document.getElementById('f-tank-chip').onclick = ()=>{ document.getElementById('f-liters').value = numToInput(volToDisplay(cfg.tankCap)); updatePreview(); };
 
-  document.getElementById('f-price').value = '';
-  loadPriceForFuelType();
+  document.getElementById('f-fuel-type').value = rec?.fuelType || 'Corriente';
+  // pricePerUnit se guarda en canónico ($/L); se muestra en la unidad de volumen activa
+  document.getElementById('f-price').value = rec ? miles(String(Math.round(cfg.volUnit==='gal'?rec.pricePerUnit*L_PER_GAL:rec.pricePerUnit))) : '';
+  if(!rec) loadPriceForFuelType(); else document.getElementById('f-lastprice-chip').textContent='';
 
   const chipsWrap = document.getElementById('f-station-chips');
-  chipsWrap.innerHTML = estaciones.map(e=>`<button type="button" class="gl-chip" data-est="${e.id}" data-nombre="${escAttr(e.nombre)}">${e.nombre}</button>`).join('')
+  chipsWrap.innerHTML = estaciones.map(e=>`<button type="button" class="gl-chip" data-est="${e.id}" data-nombre="${escAttr(e.nombre)}" ${rec&&rec.estacionId===e.id?'aria-pressed="true"':''}>${e.nombre}</button>`).join('')
     + `<button type="button" class="gl-chip" onclick="closeDialog('add-modal');showView('ajustes')">+ Otra…</button>`;
   chipsWrap.querySelectorAll('[data-est]').forEach(b=>b.addEventListener('click',()=>{
     chipsWrap.querySelectorAll('[data-est]').forEach(x=>x.removeAttribute('aria-pressed'));
     b.setAttribute('aria-pressed','true');
   }));
 
-  document.getElementById('f-notes').value='';
+  document.getElementById('f-notes').value = rec?.notes || '';
   document.getElementById('f-preview-body').textContent = 'Escribe el odómetro, el volumen y el precio para ver el rendimiento y el total.';
+  if(rec) updatePreview();
 
   openDialog('add-modal');
+}
+function editRecord(id){
+  const rec = records.find(r=>r.id===id);
+  if(rec) openAddModal(document.activeElement, rec);
 }
 function loadPriceForFuelType(){
   const type = document.getElementById('f-fuel-type').value;
@@ -1917,7 +2030,11 @@ function updatePreview(){
   const odo = distFromDisplay(odoDisp);
   const liters = volFromDisplay(volDisp);
   const total = volDisp*priceDisp;
-  const last = records.length ? records[records.length-1] : null;
+  // Al editar se compara contra el registro anterior a este, no contra el último de todos
+  const otros = records.filter(r=>r.id!==editingRecordId);
+  const last = editingRecordId
+    ? otros.filter(r=>r.odometer<odo).slice(-1)[0] || null
+    : (otros.length ? otros[otros.length-1] : null);
 
   // Validación
   let warn='';
@@ -1931,11 +2048,11 @@ function updatePreview(){
     const km = odo-last.odometer;
     const eff = calcEff(km, liters);
     if(eff){
-      box.innerHTML = `Recorriste <b>${fmt.int(distToDisplay(km))} ${distUnitLabel()}</b> con ${fmt.n(volDisp,1)} ${volUnitLabel()} → <b>${fmt.n(effToDisplay(eff.kmL))} ${effUnitLabel()}</b>. Pagas <b>${fmt.money(total)}</b>.`;
+      box.innerHTML = `Recorriste <b>${fmt.int(distToDisplay(km))} ${distUnitLabel()}</b> con ${fmtVol(volDisp)} ${volUnitLabel()} → <b>${fmt.n(effToDisplay(eff.kmL))} ${effUnitLabel()}</b>. Pagas <b>${fmt.money(total)}</b>.`;
       return;
     }
   }
-  box.innerHTML = `Pagas <b>${fmt.money(total)}</b> por ${fmt.n(volDisp,1)} ${volUnitLabel()}.`;
+  box.innerHTML = `Pagas <b>${fmt.money(total)}</b> por ${fmtVol(volDisp)} ${volUnitLabel()}.`;
 }
 
 document.getElementById('add-form').addEventListener('submit', async e=>{
@@ -1952,16 +2069,21 @@ document.getElementById('add-form').addEventListener('submit', async e=>{
 
   const odo = distFromDisplay(odoDisp);
   const liters = volFromDisplay(volDisp);
-  const maxOdo = records.length ? Math.max(...records.map(r=>r.odometer)) : -Infinity;
-  if(odo<=maxOdo){ toast('El odómetro debe ser mayor al último registrado','err'); return; }
+  // Al editar, el propio registro no cuenta para las validaciones de odómetro
+  const otros = records.filter(r=>r.id!==editingRecordId);
+  const maxOdo = otros.length ? Math.max(...otros.map(r=>r.odometer)) : -Infinity;
   if(volDisp<=0 || priceDisp<=0){ toast('El volumen y el precio deben ser mayores a cero','err'); return; }
-  if(records.length && (odo-maxOdo) > distFromDisplay(5000)){
-    if(!confirm('El salto de odómetro parece muy grande. ¿Confirmas que es correcto?')) return;
+  if(otros.some(r=>r.odometer===odo)){ toast('Ya hay un tanqueo con ese odómetro','err'); return; }
+  if(!editingRecordId){
+    if(odo<=maxOdo){ toast('El odómetro debe ser mayor al último registrado','err'); return; }
+    if(otros.length && (odo-maxOdo) > distFromDisplay(5000)){
+      if(!confirm('El salto de odómetro parece muy grande. ¿Confirmas que es correcto?')) return;
+    }
   }
 
   const total = volDisp*priceDisp;
   const pricePerLiter = cfg.volUnit==='gal' ? priceDisp/L_PER_GAL : priceDisp;
-  const prev = prevRecord(odo);
+  const prev = otros.filter(r=>r.odometer<odo).slice(-1)[0] || null;
   let kmDriven=null, kmL=null, galKm=null;
   if(prev){ kmDriven = odo-prev.odometer; const eff=calcEff(kmDriven, liters); if(eff){kmL=eff.kmL; galKm=eff.galKm;} }
 
@@ -1970,22 +2092,29 @@ document.getElementById('add-form').addEventListener('submit', async e=>{
   const estacionNombre = selEstBtn ? selEstBtn.dataset.nombre : null;
 
   const recordDate = firebase.firestore.Timestamp.fromDate(new Date(dateVal));
+  const payload = {
+    date:recordDate, fuelType, odometer:odo, liters, litersInput:liters, fuelUnit:'L',
+    pricePerUnit:pricePerLiter, totalCost:total, notes, kmDriven, kmL, galKm,
+    estacionId, estacionNombre,
+  };
   btn.disabled = true;
+  const editando = !!editingRecordId;
   try{
-    await addRecord({
-      date:recordDate, fuelType, odometer:odo, liters, litersInput:liters, fuelUnit:'L',
-      pricePerUnit:pricePerLiter, totalCost:total, notes, kmDriven, kmL, galKm,
-      estacionId, estacionNombre,
-    });
+    if(editando){
+      await updateRecord(editingRecordId, payload);
+    } else {
+      await addRecord(payload);
+      if(estacionId){ estRef().doc(estacionId).update({usos:firebase.firestore.FieldValue.increment(1)}).catch(()=>{}); }
+    }
     const lp={...(cfg.lastPrices||{})};
     lp[fuelType] = { price:pricePerLiter, ts:Math.floor(Date.now()/1000) };
     cfg.lastPrices=lp;
     persistCfg();
-    if(estacionId){ estRef().doc(estacionId).update({usos:firebase.firestore.FieldValue.increment(1)}).catch(()=>{}); }
+    editingRecordId = null;
     e.target.reset();
     closeDialog('add-modal');
-    toast('¡Tanqueo registrado!');
-    showView('resumen');
+    toast(editando ? 'Tanqueo actualizado' : '¡Tanqueo registrado!');
+    if(!editando) showView('resumen');
   }catch{ toast('Error al guardar','err'); }
   finally{ btn.disabled=false; }
 });
