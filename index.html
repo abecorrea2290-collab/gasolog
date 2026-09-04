@@ -577,8 +577,15 @@ main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px
   <div class="dialog elev-lg">
     <h3 class="dialog-title" id="pago-modal-title">Registrar un pago</h3>
     <form id="pago-form" style="display:flex;flex-direction:column;gap:11.2px">
+      <div class="field"><label>Tipo</label>
+        <div class="seg" id="seg-pago-cat" style="width:100%">
+          <button type="button" class="seg-opt" data-val="papeles" aria-pressed="false" style="flex:1;justify-content:center">Papeles y seguros</button>
+          <button type="button" class="seg-opt" data-val="mantenimiento" aria-pressed="true" style="flex:1;justify-content:center">Mantenimiento</button>
+        </div>
+      </div>
       <div class="field"><label>Fecha</label><input class="input" type="date" id="p-fecha" required/></div>
-      <div class="field"><label>Concepto</label><input class="input" type="text" id="p-concepto" required maxlength="60" placeholder="SOAT, filtros, lavado…"/></div>
+      <div class="field"><label>Concepto</label><input class="input" type="text" id="p-concepto" required maxlength="60" placeholder="Cambio de aceite, filtros, llantas…"/></div>
+      <div class="field" id="p-km-field"><label id="p-km-label">Kilometraje del mantenimiento</label><input class="input" type="text" inputmode="numeric" id="p-km"/></div>
       <div class="field"><label>Detalle</label><input class="input" type="text" id="p-detalle" maxlength="100" placeholder="Opcional"/></div>
       <div class="field"><label>Valor</label><input class="input" type="text" inputmode="numeric" id="p-valor" required/></div>
       <div class="dialog-actions">
@@ -853,9 +860,9 @@ function avgDailyKm(){
   return totalKm>0 ? totalKm/daysSpan : (cfg.dailyKm||40);
 }
 
-// Desglose del costo REAL de tener el carro: combustible + papeles/seguro + mantenimiento por
-// kilometraje (aceite), amortizados por mes — y el costo por km resultante de sumar TODO, no
-// solo el combustible. Es la misma cuenta que "Lo que cuesta tener el carro" en Mantenimiento.
+// Desglose del costo REAL de tener el carro: combustible + papeles/seguro + mantenimiento,
+// amortizados por mes — y el costo por km resultante de sumar TODO, no solo el combustible.
+// Es la misma cuenta que "Lo que cuesta tener el carro" en Mantenimiento.
 function costoRealDesglose(){
   const byTipo = Object.fromEntries(mantenimiento.map(m=>[m.tipo,m]));
   const dates = records.map(r=>r.date?.toDate?r.date.toDate():new Date(r.date)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
@@ -864,11 +871,29 @@ function costoRealDesglose(){
   const combMensual = monthsSpan ? totalCost/monthsSpan : (records.length?totalCost:0);
   const soat = byTipo.soat, seguro = byTipo.seguro, aceite = byTipo.aceite;
   const papelesMensual = ((soat?.costoEstimado||0)/12) + ((seguro?.costoEstimado||0)*(seguro?.duracionMeses?12/seguro.duracionMeses:1)/12);
-  const mantMensual = aceite && aceite.costoEstimado && aceite.intervaloKm ? aceite.costoEstimado*(avgDailyKm()*30.44/aceite.intervaloKm) : 0;
+
+  // Mantenimiento: si hay pagos reales registrados se amortizan sobre el periodo que cubren
+  // (desde el mantenimiento más antiguo hasta hoy). Solo si no hay ninguno se cae al estimado
+  // teórico del aceite por intervalo de km.
+  const pagosMant = pagos.filter(p=>pagoCategoria(p)==='mantenimiento' && p.valor>0);
+  const totalMant = pagosMant.reduce((s,p)=>s+p.valor,0);
+  let mantMensual;
+  if(pagosMant.length){
+    const fechasMant = pagosMant.map(p=>parseTs(p.fecha)).filter(d=>d && !isNaN(d)).sort((a,b)=>a-b);
+    const mesesMant = fechasMant.length
+      ? Math.max((Date.now()-fechasMant[0])/(86400000*30.44), 1)
+      : 1;
+    mantMensual = totalMant/mesesMant;
+  } else {
+    mantMensual = aceite && aceite.costoEstimado && aceite.intervaloKm
+      ? aceite.costoEstimado*(avgDailyKm()*30.44/aceite.intervaloKm) : 0;
+  }
+  const mantEsReal = pagosMant.length>0;
+
   const costoRealMensual = combMensual+papelesMensual+mantMensual;
   const kmMensual = avgDailyKm()*30.44;
   const costoRealPorKm = kmMensual>0 ? costoRealMensual/kmMensual : null;
-  return {combMensual, papelesMensual, mantMensual, costoRealMensual, costoRealPorKm};
+  return {combMensual, papelesMensual, mantMensual, mantEsReal, totalMant, costoRealMensual, costoRealPorKm};
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -1510,13 +1535,16 @@ function renderMantenimiento(){
 
   // Lo que cuesta tener el carro
   const statKmL = statAvgKmL();
-  const {combMensual, papelesMensual, mantMensual, costoRealMensual, costoRealPorKm} = costoRealDesglose();
+  const {combMensual, papelesMensual, mantMensual, mantEsReal, costoRealMensual, costoRealPorKm} = costoRealDesglose();
   const pctComb = costoRealMensual>0 ? Math.round((combMensual/costoRealMensual)*100) : 0;
   const pctPapeles = costoRealMensual>0 ? Math.round((papelesMensual/costoRealMensual)*100) : 0;
   const pctMant = Math.max(0,100-pctComb-pctPapeles);
 
   el.innerHTML = `
-    <div class="view-hdr"><h4>Papeles y mantenimiento</h4><button class="btn btn-primary" onclick="openPagoModal()">Registrar un pago</button></div>
+    <div class="view-hdr"><h4>Papeles y mantenimiento</h4>
+      <button class="btn btn-primary" onclick="openPagoModal('mantenimiento')">Registrar mantenimiento</button>
+      <button class="btn btn-secondary" onclick="openPagoModal('papeles')">Otro pago</button>
+    </div>
     <div class="grid-auto-290">${cards}</div>
 
     <div class="card elev-sm" style="padding:22.4px;gap:11.2px">
@@ -1538,24 +1566,60 @@ function renderMantenimiento(){
         <div class="stat-cell sm" style="padding:0"><div class="lbl" style="color:var(--color-accent-300)">Total real / mes</div><div class="val" style="font-size:20px">${fmt.money(costoRealMensual)}</div></div>
         <div class="stat-cell sm" style="padding:0"><div class="lbl" style="color:var(--color-accent-300)">Costo real / ${distUnitLabel()}</div><div class="val" style="font-size:20px">${costoRealPorKm?fmt.money(costPerDistToDisplay(costoRealPorKm)):'—'}</div></div>
       </div>
-      <div style="font-size:11px;color:var(--color-text-dim)">Incluye combustible, SOAT, seguro y mantenimiento por kilometraje — no solo la gasolina.</div>
+      <div style="font-size:11px;color:var(--color-text-dim)">Incluye combustible, SOAT, seguro y ${mantEsReal?'los mantenimientos que registraste':'el mantenimiento estimado por kilometraje'} — no solo la gasolina.</div>
     </div>
 
-    <div class="card elev-sm tbl-card" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
-      <h5 style="padding:0 22.4px 8.4px">Pagos registrados</h5>
-      <div class="tbl-wrap"><table class="table table-stack" style="min-width:560px">
-        <thead><tr><th>Concepto</th><th>Detalle</th><th class="num">Valor</th><th class="acts"></th></tr></thead>
-        <tbody>${pagos.length ? pagos.map(p=>`<tr>
-          <td class="stack-title">${p.concepto}<div class="ku" style="color:var(--color-text-dimmer);font-size:11px">${fmt.date(p.fecha)}</div></td>
-          <td data-label="Detalle" style="color:var(--color-text-dim)">${p.detalle||'—'}</td>
-          <td class="num" data-label="Valor">${fmt.money(p.valor)}</td>
-          <td class="acts"><span class="acts-wrap"><button class="btn-icon" onclick="deletePago('${p.id}')" title="Borrar pago" aria-label="Borrar pago">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16"/></svg>
-          </button></span></td></tr>`).join('') : `<tr><td colspan="4" style="text-align:center;color:var(--color-text-dimmer)">Sin pagos registrados</td></tr>`}</tbody>
-      </table></div>
-    </div>
+    ${tablaPapeles()}
+    ${tablaMantenimientos()}
   `;
 }
+
+const ICONO_BORRAR = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16"/></svg>`;
+
+// Renovaciones de SOAT, tecnomecánica y seguro — se rigen por fecha, así que no llevan km
+function tablaPapeles(){
+  const filas = pagos.filter(p=>pagoCategoria(p)==='papeles');
+  const total = filas.reduce((s,p)=>s+(p.valor||0),0);
+  return `<div class="card elev-sm tbl-card" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
+    <div style="padding:0 22.4px 8.4px;display:flex;align-items:baseline;gap:8.4px;flex-wrap:wrap">
+      <h5 style="margin:0">Renovaciones de papeles y seguros</h5>
+      <span style="font-size:11px;color:var(--color-text-dimmer);margin-left:auto">${filas.length?fmt.money(total)+' en total':''}</span>
+    </div>
+    <div class="tbl-wrap"><table class="table table-stack" style="min-width:560px">
+      <thead><tr><th>Concepto</th><th>Detalle</th><th class="num">Valor</th><th class="acts"></th></tr></thead>
+      <tbody>${filas.length ? filas.map(p=>`<tr>
+        <td class="stack-title">${p.concepto}<div class="ku" style="color:var(--color-text-dimmer);font-size:11px">${fmt.date(p.fecha)}</div></td>
+        <td data-label="Detalle" style="color:var(--color-text-dim)">${p.detalle||'—'}</td>
+        <td class="num" data-label="Valor">${fmt.money(p.valor)}</td>
+        <td class="acts"><span class="acts-wrap"><button class="btn-icon" onclick="deletePago('${p.id}')" title="Borrar" aria-label="Borrar pago">${ICONO_BORRAR}</button></span></td>
+      </tr>`).join('') : `<tr><td colspan="4" style="text-align:center;color:var(--color-text-dimmer)">Sin renovaciones registradas — usa "Renovar" en las tarjetas de arriba</td></tr>`}</tbody>
+    </table></div>
+  </div>`;
+}
+
+// Cambios de aceite y demás mantenimientos — llevan el km en que se hicieron y su valor,
+// y son los que alimentan la parte de "mantenimiento" del costo de tener el carro.
+function tablaMantenimientos(){
+  const filas = pagos.filter(p=>pagoCategoria(p)==='mantenimiento');
+  const total = filas.reduce((s,p)=>s+(p.valor||0),0);
+  return `<div class="card elev-sm tbl-card" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
+    <div style="padding:0 22.4px 8.4px;display:flex;align-items:baseline;gap:8.4px;flex-wrap:wrap">
+      <h5 style="margin:0">Mantenimientos realizados</h5>
+      <span style="font-size:11px;color:var(--color-text-dimmer);margin-left:auto">${filas.length?fmt.money(total)+' en total':''}</span>
+    </div>
+    <div class="tbl-wrap"><table class="table table-stack" style="min-width:560px">
+      <thead><tr><th>Concepto</th><th class="num">Kilometraje</th><th>Detalle</th><th class="num">Valor</th><th class="acts"></th></tr></thead>
+      <tbody>${filas.length ? filas.map(p=>`<tr>
+        <td class="stack-title">${p.concepto}<div class="ku" style="color:var(--color-text-dimmer);font-size:11px">${fmt.date(p.fecha)}</div></td>
+        <td class="num" data-label="Kilometraje">${p.km?fmt.int(distToDisplay(p.km))+' '+distUnitLabel():'—'}</td>
+        <td data-label="Detalle" style="color:var(--color-text-dim)">${p.detalle||'—'}</td>
+        <td class="num" data-label="Valor">${fmt.money(p.valor)}</td>
+        <td class="acts"><span class="acts-wrap"><button class="btn-icon" onclick="deletePago('${p.id}')" title="Borrar" aria-label="Borrar mantenimiento">${ICONO_BORRAR}</button></span></td>
+      </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--color-text-dimmer)">Sin mantenimientos registrados — usa "Registrar un pago"</td></tr>`}</tbody>
+    </table></div>
+  </div>`;
+}
+
 function mantConsejo(m, tag){
   if(tag.label==='vencido') return 'Está vencido. Ponte al día lo antes posible.';
   if(tag.label==='pronto') return `Es lo más próximo. Sácalo antes de que venza para no pagar multa.`;
@@ -1650,10 +1714,15 @@ document.getElementById('mant-form').addEventListener('submit', async e=>{
       await mantRef().doc('aceite').set({tipo:'aceite',modo:'kilometraje',kmBase,intervaloKm:(OIL_TYPES[oilType]||OIL_TYPES.semisintetico).km,oilType,costoEstimado:costo,periodicidad:'porKm'});
     }
     if(renovar && document.getElementById('m-registrar-pago')?.checked && costo>0){
-      const kmTxt = kmRegistro ? `${fmt.int(distToDisplay(kmRegistro))} ${distUnitLabel()}` : '';
+      // El aceite es mantenimiento (se rige por km); SOAT/tecno/seguro son papeles (por fecha)
+      const esMant = tipo==='aceite';
       await pagosRef().add({
-        fecha: tipo==='aceite' ? new Date().toISOString().slice(0,10) : fechaEl.value,
-        concepto: mantLabel(tipo), detalle: kmTxt, valor: costo,
+        fecha: esMant ? new Date().toISOString().slice(0,10) : fechaEl.value,
+        concepto: mantLabel(tipo),
+        detalle: '',
+        valor: costo,
+        categoria: esMant ? 'mantenimiento' : 'papeles',
+        km: kmRegistro || null,
       });
     }
     closeDialog('mant-modal');
@@ -1672,22 +1741,48 @@ async function deletePago(id){
   catch{ toast('Error al borrar','err'); }
 }
 
-function openPagoModal(){
+function openPagoModal(categoria='mantenimiento'){
   document.getElementById('p-fecha').value = new Date().toISOString().slice(0,10);
   document.getElementById('p-concepto').value=''; document.getElementById('p-detalle').value=''; document.getElementById('p-valor').value='';
+  // el kilometraje se precarga con el odómetro actual, que es lo más probable
+  const odo = records.length ? records[records.length-1].odometer : null;
+  document.getElementById('p-km').value = odo ? miles(String(Math.round(distToDisplay(odo)))) : '';
+  document.querySelectorAll('#seg-pago-cat .seg-opt').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.val===categoria)));
+  syncPagoCatUI();
   openDialog('pago-modal');
 }
+// El kilometraje solo aplica a mantenimientos (los papeles se rigen por fecha)
+function syncPagoCatUI(){
+  const cat = document.querySelector('#seg-pago-cat .seg-opt[aria-pressed="true"]')?.dataset.val || 'mantenimiento';
+  document.getElementById('p-km-field').style.display = cat==='mantenimiento' ? '' : 'none';
+  document.getElementById('p-km-label').textContent = `Kilometraje del mantenimiento (${distUnitLabel()})`;
+  document.getElementById('p-concepto').placeholder = cat==='mantenimiento'
+    ? 'Cambio de aceite, filtros, llantas…' : 'SOAT, tecnomecánica, seguro…';
+}
+bindSeg('seg-pago-cat', ()=>syncPagoCatUI());
 document.getElementById('pago-form').addEventListener('submit', async e=>{
   e.preventDefault();
+  const categoria = document.querySelector('#seg-pago-cat .seg-opt[aria-pressed="true"]')?.dataset.val || 'mantenimiento';
   const fecha=document.getElementById('p-fecha').value;
   const concepto=document.getElementById('p-concepto').value.trim();
   const detalle=document.getElementById('p-detalle').value.trim();
   const valor=num(document.getElementById('p-valor').value);
+  const kmVal=num(document.getElementById('p-km').value);
+  const km = (categoria==='mantenimiento' && kmVal) ? Math.round(distFromDisplay(kmVal)) : null;
   if(!fecha||!concepto||!valor){ toast('Completa fecha, concepto y valor','err'); return; }
-  try{ await pagosRef().add({fecha,concepto,detalle,valor}); closeDialog('pago-modal'); toast('Pago registrado'); }
+  try{ await pagosRef().add({fecha,concepto,detalle,valor,categoria,km}); closeDialog('pago-modal'); toast('Pago registrado'); }
   catch{ toast('Error al guardar','err'); }
 });
 attachFormatter(document.getElementById('p-valor'), miles);
+attachFormatter(document.getElementById('p-km'), miles);
+
+// Los pagos viejos no traen `categoria`: se deduce del concepto para no perderlos de vista.
+function pagoCategoria(p){
+  if(p.categoria) return p.categoria;
+  const c = (p.concepto||'').toLowerCase();
+  return (c.includes('soat')||c.includes('tecno')||c.includes('seguro')||c.includes('poliza')||c.includes('póliza'))
+    ? 'papeles' : 'mantenimiento';
+}
 
 /* ════════════════════════════════════════════════════════════════
    ANÁLISIS
