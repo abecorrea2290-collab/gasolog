@@ -167,6 +167,9 @@ img.lighten{mix-blend-mode:lighten}
 .dialog-backdrop.open{display:flex}
 .dialog{background:var(--color-surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:22.4px;width:min(480px,100%);max-height:92dvh;overflow-y:auto;display:flex;flex-direction:column;gap:16.8px;border:1px solid var(--color-divider-strong)}
 .dialog-title{font-size:18px;font-weight:600}
+/* Casilla visible dentro de los diálogos (la regla .radio input de Nocturne oculta los nativos) */
+.check-row{display:flex;align-items:center;gap:8.4px;cursor:pointer;font-size:13px;min-height:44px}
+.check-row input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:var(--color-accent);cursor:pointer}
 .dialog-sub{font-size:13px;color:var(--color-text-dim);margin-top:0}
 .dialog-actions{display:flex;gap:8.4px;flex-direction:column}
 @media(min-width:480px){.dialog-actions{flex-direction:row-reverse}}
@@ -1685,8 +1688,9 @@ function editMant(tipo, modo='editar'){
   }
   // En renovación se ofrece dejar constancia del pago en el histórico
   if(renovar){
-    html += `<label class="radio" style="gap:8px"><input type="checkbox" id="m-registrar-pago" checked style="position:static;opacity:1;width:16px;height:16px;pointer-events:auto"/>
-      <span style="font-size:13px">Registrar también el pago en el histórico</span></label>`;
+    html += `<label class="check-row"><input type="checkbox" id="m-registrar-pago" checked/>
+      <span>Registrar también el pago en el histórico</span></label>
+      <div class="field-hint" id="m-pago-hint">Necesita que escribas el costo. Si no lo sabes, desmarca la casilla.</div>`;
   }
   document.getElementById('mant-modal-title').textContent = title;
   document.getElementById('mant-form-fields').innerHTML = html;
@@ -1701,6 +1705,14 @@ document.getElementById('mant-form').addEventListener('submit', async e=>{
   const kmRegistro = kmEl && kmEl.value ? Math.round(distFromDisplay(num(kmEl.value))) : null;
   const costo = parseFloat(num(document.getElementById('m-costo')?.value))||0;
   const fechaEl = document.getElementById('m-fecha');
+  const quierePago = renovar && document.getElementById('m-registrar-pago')?.checked;
+  // Antes esto se saltaba en silencio y el toast igual decía "Renovación registrada",
+  // así que el pago nunca aparecía en la tabla y no había forma de notarlo.
+  if(quierePago && costo<=0){
+    toast('Escribe el costo para registrar el pago, o desmarca la casilla','err');
+    document.getElementById('m-costo')?.focus();
+    return;
+  }
   try{
     if(tipo==='soat'){
       await mantRef().doc('soat').set({tipo:'soat',modo:'fecha',fechaBase:fechaEl.value,kmRegistro,duracionMeses:12,costoEstimado:costo,periodicidad:'anual'});
@@ -1713,7 +1725,7 @@ document.getElementById('mant-form').addEventListener('submit', async e=>{
       const kmBase = Math.round(distFromDisplay(num(kmEl.value)))||0;
       await mantRef().doc('aceite').set({tipo:'aceite',modo:'kilometraje',kmBase,intervaloKm:(OIL_TYPES[oilType]||OIL_TYPES.semisintetico).km,oilType,costoEstimado:costo,periodicidad:'porKm'});
     }
-    if(renovar && document.getElementById('m-registrar-pago')?.checked && costo>0){
+    if(quierePago){
       // El aceite es mantenimiento (se rige por km); SOAT/tecno/seguro son papeles (por fecha)
       const esMant = tipo==='aceite';
       await pagosRef().add({
