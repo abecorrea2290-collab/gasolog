@@ -792,6 +792,17 @@ function attachFormatter(el, fn, onInput){
    UNIDADES — conversión, guardado siempre en canónico km/L
 ════════════════════════════════════════════════════════════════ */
 function gal2L(g){ return g*L_PER_GAL; }
+
+// IMPORTANTE — dos formatos conviven en la base de datos:
+//   · Registros viejos (antes del rediseño): pricePerUnit se guardaba TAL CUAL se escribió, en
+//     la unidad del propio registro. Con fuelUnit:'gal' eso es $/galón, no $/litro. En Colombia
+//     la gasolina se vende por galón, así que la mayoría de los registros existentes son así.
+//   · Registros nuevos: pricePerUnit siempre en $/litro y fuelUnit:'L'.
+// `fuelUnit` identifica el formato de cada registro, así que se normaliza a $/litro al leer.
+function precioPorLitro(r){
+  if(!r || !isFinite(r.pricePerUnit) || r.pricePerUnit<=0) return null;
+  return r.fuelUnit==='gal' ? r.pricePerUnit/L_PER_GAL : r.pricePerUnit;
+}
 function distToDisplay(km){ return cfg.distUnit==='mi' ? km/KM_PER_MI : km; }
 function distFromDisplay(v){ return cfg.distUnit==='mi' ? v*KM_PER_MI : v; }
 function volToDisplay(L){ return cfg.volUnit==='gal' ? L/L_PER_GAL : L; }
@@ -1453,8 +1464,10 @@ async function confirmDel(id){
 
 function exportCSV(){
   if(!records.length){ toast('No hay datos','err'); return; }
-  const headers=['Fecha','Odometro','Km Recorridos','Litros','Precio/Unidad','Total','km/L','Estacion','Notas'];
-  const rows=records.map(r=>[fmt.date(r.date),r.odometer,r.kmDriven||'',fmt.n(r.liters,3),r.pricePerUnit,r.totalCost.toFixed(0),r.kmL?fmt.n(r.kmL):'',r.estacionNombre||'',r.notes||''].join(','));
+  // El precio se exporta normalizado a $/litro, para que la columna sea comparable entre
+  // registros viejos (guardados por galón) y nuevos.
+  const headers=['Fecha','Odometro','Km Recorridos','Litros','Precio/Litro','Total','km/L','Estacion','Notas'];
+  const rows=records.map(r=>[fmt.date(r.date),r.odometer,r.kmDriven||'',fmt.n(r.liters,3),Math.round(precioPorLitro(r)||0),r.totalCost.toFixed(0),r.kmL?fmt.n(r.kmL):'',r.estacionNombre||'',r.notes||''].join(','));
   const blob=new Blob([[headers.join(','),...rows].join('\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download='gasolog_'+new Date().toISOString().split('T')[0]+'.csv';a.click();URL.revokeObjectURL(a.href);
@@ -1840,8 +1853,11 @@ function pagoCategoria(p){
 /* ════════════════════════════════════════════════════════════════
    PRECIOS — seguimiento del precio del combustible por estación
 ════════════════════════════════════════════════════════════════ */
-// pricePerUnit se guarda en canónico ($/L); aquí se pasa a la unidad de volumen activa
-function precioDisplay(r){ return cfg.volUnit==='gal' ? r.pricePerUnit*L_PER_GAL : r.pricePerUnit; }
+function precioDisplay(r){
+  const porLitro = precioPorLitro(r);
+  if(porLitro==null) return null;
+  return cfg.volUnit==='gal' ? porLitro*L_PER_GAL : porLitro;
+}
 
 function renderPrecios(){
   const el = document.getElementById('precios-body');
@@ -2282,8 +2298,8 @@ function openAddModal(opener, rec){
   document.getElementById('f-tank-chip').onclick = ()=>{ document.getElementById('f-liters').value = numToInput(volToDisplay(cfg.tankCap)); updatePreview(); };
 
   document.getElementById('f-fuel-type').value = rec?.fuelType || 'Corriente';
-  // pricePerUnit se guarda en canónico ($/L); se muestra en la unidad de volumen activa
-  document.getElementById('f-price').value = rec ? miles(String(Math.round(cfg.volUnit==='gal'?rec.pricePerUnit*L_PER_GAL:rec.pricePerUnit))) : '';
+  // precioDisplay normaliza el formato viejo ($/galón) y lo pasa a la unidad activa
+  document.getElementById('f-price').value = rec ? miles(String(Math.round(precioDisplay(rec)||0))) : '';
   if(!rec) loadPriceForFuelType(); else document.getElementById('f-lastprice-chip').textContent='';
 
   const chipsWrap = document.getElementById('f-station-chips');
@@ -2306,11 +2322,12 @@ function editRecord(id){
 }
 function loadPriceForFuelType(){
   const type = document.getElementById('f-fuel-type').value;
-  const last = (cfg.lastPrices||{})[type];
   const chip = document.getElementById('f-lastprice-chip');
-  if(last){
-    // last.price está guardado en canónico ($/L); se muestra en la unidad de volumen activa.
-    const priceDisp = cfg.volUnit==='gal' ? last.price*L_PER_GAL : last.price;
+  // Se toma del último registro de ese combustible en vez de cfg.lastPrices, porque los valores
+  // guardados ahí en la versión vieja no dicen en qué unidad están y salían inflados ~3,8×.
+  const ultimo = [...records].reverse().find(r=>r.fuelType===type && precioPorLitro(r)!=null);
+  const priceDisp = ultimo ? precioDisplay(ultimo) : null;
+  if(priceDisp){
     const priceDispTxt = miles(String(Math.round(priceDisp)));
     chip.textContent = 'Último · '+priceDispTxt;
     chip.onclick = ()=>{ document.getElementById('f-price').value = priceDispTxt; updatePreview(); };
