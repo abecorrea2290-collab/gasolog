@@ -2,13 +2,19 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<!-- viewport-fit=cover: necesario para que env(safe-area-inset-*) funcione en iPhone con notch.
+     Sin maximum-scale para no bloquear el zoom (accesibilidad); el zoom automático al enfocar
+     un campo se evita dando 16px a los inputs, no capando el zoom. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#14151f">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="GasoLog">
+<meta name="format-detection" content="telephone=no">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="gasolog-icon.png" type="image/png">
+<link rel="apple-touch-icon" href="gasolog-icon-192.png">
 <title>GasoLog</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -52,8 +58,17 @@
   --shadow-lg:0 20px 60px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{scroll-behavior:smooth}
-body{font-family:var(--font-body);background:var(--color-bg);color:var(--color-text);min-height:100vh;font-size:14px;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{
+  font-family:var(--font-body);background:var(--color-bg);color:var(--color-text);
+  min-height:100vh;min-height:100dvh; /* dvh evita el salto por la barra de Safari en iOS */
+  font-size:14px;overflow-x:hidden;-webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;      /* corta el rebote elástico que descubre el fondo */
+  -webkit-overflow-scrolling:touch;
+}
+/* Quita el retardo de 300 ms del doble toque en iOS en todo lo interactivo */
+button,a,.gl-chip,.gl-tab,.seg-opt,.bn-item,label,input,select,textarea{touch-action:manipulation}
+button{-webkit-appearance:none;appearance:none;font-family:inherit}
 ::selection{background:color-mix(in srgb,var(--color-accent) 35%, transparent);color:var(--color-text)}
 :focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -105,9 +120,13 @@ img.lighten{mix-blend-mode:lighten}
 .field label{font-size:10.5px;color:var(--color-text-dim);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 .input,select.input,textarea.input{
   background:var(--color-bg-2);border:1px solid var(--color-divider);border-radius:8px;padding:9px 11px;
-  color:var(--color-text);font:inherit;font-size:13px;min-height:44px;width:100%;outline:none;
-  transition:border-color .15s,background .15s;-webkit-appearance:none;
+  color:var(--color-text);font-family:inherit;font-weight:inherit;min-height:44px;width:100%;outline:none;
+  transition:border-color .15s,background .15s;-webkit-appearance:none;appearance:none;
+  /* 16px es el mínimo que evita que iOS Safari haga zoom al enfocar el campo */
+  font-size:16px;
 }
+/* Los date/datetime nativos de iOS no se centran solos dentro del alto mínimo */
+.input[type=date],.input[type=datetime-local]{display:block;line-height:1.2}
 .input:focus{border-color:var(--color-accent);background:var(--color-surface-2)}
 .input::placeholder{color:var(--color-text-dimmer)}
 .field-hint{font-size:10.5px;color:var(--color-text-dimmer)}
@@ -163,7 +182,8 @@ img.lighten{mix-blend-mode:lighten}
   .table-stack tbody td:empty{display:none}
 }
 
-.dialog-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:999;padding:16px}
+.dialog-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:999;
+  padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
 .dialog-backdrop.open{display:flex}
 .dialog{background:var(--color-surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:22.4px;width:min(480px,100%);max-height:92dvh;overflow-y:auto;display:flex;flex-direction:column;gap:16.8px;border:1px solid var(--color-divider-strong)}
 .dialog-title{font-size:18px;font-weight:600}
@@ -243,13 +263,16 @@ img.lighten{mix-blend-mode:lighten}
 /* ══════════════════════════════════════════════════════════════════
    SHELL / HEADER
 ══════════════════════════════════════════════════════════════════ */
-.app-shell{display:none;min-height:100vh;flex-direction:column}
+.app-shell{display:none;min-height:100vh;min-height:100dvh;flex-direction:column}
 .app-shell.visible{display:flex}
 
 header.topheader{
   position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--color-bg) 88%, transparent);
-  backdrop-filter:blur(14px);border-bottom:1px solid var(--color-divider);
-  display:flex;align-items:center;gap:11.2px;padding:11.2px 22.4px;flex-wrap:wrap;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--color-divider);
+  display:flex;align-items:center;gap:11.2px;flex-wrap:wrap;
+  /* El header queda bajo la barra de estado en iOS standalone: se respeta el notch */
+  padding:calc(11.2px + env(safe-area-inset-top)) calc(22.4px + env(safe-area-inset-right)) 11.2px calc(22.4px + env(safe-area-inset-left));
 }
 .brand{display:flex;align-items:center;gap:8px;margin-right:auto;min-width:0}
 .brand img{width:26px;height:26px;border-radius:6px;display:block;flex-shrink:0}
@@ -274,15 +297,18 @@ nav.gl-nav{display:flex;gap:2.8px;flex-wrap:wrap}
 /* Bottom nav (móvil) */
 .bottom-nav{
   display:none;position:sticky;bottom:0;z-index:20;background:color-mix(in srgb,var(--color-bg) 92%, transparent);
-  backdrop-filter:blur(14px);border-top:1px solid var(--color-divider);
-  padding:4px 4px calc(4px + env(safe-area-inset-bottom));
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--color-divider);
+  padding:4px calc(4px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left));
   align-items:stretch;justify-content:space-around;gap:2px;
 }
 .bn-item{
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  padding:6px 2px;min-height:52px;background:transparent;border:none;color:var(--color-text-dimmer);
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  padding:6px 1px;min-height:52px;background:transparent;border:none;color:var(--color-text-dimmer);
   border-radius:8px;font-size:10px;font-weight:600;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+/* Con 6 pestañas, en pantallas muy angostas se achica la etiqueta antes que recortarla */
+@media(max-width:380px){ .bn-item{font-size:9px} .bn-item svg{width:18px;height:18px} }
 .bn-item svg{flex-shrink:0}
 .bn-item[aria-current="page"]{color:var(--color-accent)}
 @media(max-width:760px){
@@ -290,9 +316,13 @@ nav.gl-nav{display:flex;gap:2.8px;flex-wrap:wrap}
   body{padding-bottom:0}
 }
 
-main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px;flex:1}
+main.main{max-width:1080px;width:100%;margin:0 auto;flex:1;
+  padding:22.4px calc(22.4px + env(safe-area-inset-right)) 67.2px calc(22.4px + env(safe-area-inset-left))}
 .view{display:none;flex-direction:column;gap:16.8px}
 .view.active{display:flex;animation:viewIn .22s ease}
+/* El contenido se pinta dentro de un div interno (#resumen-body, etc.), así que el gap de
+   .view no separaba nada: las tarjetas quedaban pegadas una contra otra. */
+.view > div{display:flex;flex-direction:column;gap:16.8px;min-width:0}
 @keyframes viewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
 .view-hdr{display:flex;align-items:center;gap:8.4px;flex-wrap:wrap}
@@ -468,6 +498,7 @@ main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px
     <nav class="gl-nav" id="gl-nav" aria-label="Navegación principal">
       <button class="gl-tab" data-view="resumen" aria-current="page">Resumen</button>
       <button class="gl-tab" data-view="historial">Historial</button>
+      <button class="gl-tab" data-view="precios">Precios</button>
       <button class="gl-tab" data-view="mantenimiento">Mantenimiento</button>
       <button class="gl-tab" data-view="analisis">Análisis</button>
       <button class="gl-tab" data-view="ajustes">Ajustes</button>
@@ -485,6 +516,8 @@ main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px
     <section class="view active" id="view-resumen"><div id="resumen-body"></div></section>
     <!-- ── HISTORIAL ── -->
     <section class="view" id="view-historial"><div id="historial-body"></div></section>
+    <!-- ── PRECIOS ── -->
+    <section class="view" id="view-precios"><div id="precios-body"></div></section>
     <!-- ── MANTENIMIENTO ── -->
     <section class="view" id="view-mantenimiento"><div id="mantenimiento-body"></div></section>
     <!-- ── ANÁLISIS ── -->
@@ -502,9 +535,13 @@ main.main{max-width:1080px;width:100%;margin:0 auto;padding:22.4px 22.4px 67.2px
       <svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M136,80v43.72l36.44,21.86a8,8,0,0,1-8.88,13.32l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48a95.44,95.44,0,0,0-67.88,28.11C52.6,67.14,45,74.68,37.63,82.35L32.15,63.74a8,8,0,0,0-15.36,4.52L28.62,107.9a8,8,0,0,0,9.9,5.4l39.75-11.9a8,8,0,1,0-4.58-15.34l-19.55,5.85C71.13,74.7,97.7,48,128,48a80,80,0,1,1-76.31,104.79,8,8,0,1,0-15.19,5A96,96,0,1,0,128,32Z"/></svg>
       Historial
     </button>
+    <button class="bn-item" data-view="precios">
+      <svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm12,143.6V176a12,12,0,0,1-24,0v-8.1a35.68,35.68,0,0,1-22.1-15.6,12,12,0,0,1,20.4-12.6c2,3.3,6.1,5.3,10.7,5.3h8.6c6,0,10.9-4.1,10.9-9.1s-4.9-9.1-10.9-9.1H121.4c-19.2,0-34.9-14.4-34.9-32.1,0-15.4,11.9-28.3,27.5-31.4V56a12,12,0,0,1,24,0v7.5a35.68,35.68,0,0,1,22.1,15.6,12,12,0,0,1-20.4,12.6c-2-3.3-6.1-5.3-10.7-5.3h-8.6c-6,0-10.9,4.1-10.9,9.1s4.9,9.1,10.9,9.1h12.2c19.2,0,34.9,14.4,34.9,32.1C167.5,151.6,155.6,164.5,140,167.6Z"/></svg>
+      Precios
+    </button>
     <button class="bn-item" data-view="mantenimiento">
       <svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M226.76,69.66a8,8,0,0,0-13-2.68l-31.32,31.32a20,20,0,0,1-28.28-28.28l31.32-31.32a8,8,0,0,0-2.68-13,64,64,0,0,0-79.9,79.9L36.69,171.31a32,32,0,0,0,45.25,45.25L147.9,151.42a64,64,0,0,0,79.9-79.9Z"/></svg>
-      Mantenim.
+      Taller
     </button>
     <button class="bn-item" data-view="analisis">
       <svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V48a8,8,0,0,1,16,0v94.37L90.73,98a8,8,0,0,1,10.07-.38l58.81,44.11L218.73,90a8,8,0,1,1,10.54,12l-64,56a8,8,0,0,1-10.07.38L96.39,114.29,40,163.63V200H224A8,8,0,0,1,232,208Z"/></svg>
@@ -1153,12 +1190,13 @@ function renderView(){
   if(loading){ renderSkeletons(); return; }
   if(activeView==='resumen') renderResumen();
   else if(activeView==='historial') renderHistorial();
+  else if(activeView==='precios') renderPrecios();
   else if(activeView==='mantenimiento') renderMantenimiento();
   else if(activeView==='analisis') renderAnalisis();
   else if(activeView==='ajustes') renderAjustes();
 }
 function renderSkeletons(){
-  const ids=['resumen-body','historial-body','mantenimiento-body','analisis-body','ajustes-body'];
+  const ids=['resumen-body','historial-body','precios-body','mantenimiento-body','analisis-body','ajustes-body'];
   ids.forEach(id=>{
     document.getElementById(id).innerHTML =
       '<div class="grid-auto-330"><div class="card elev-sm" style="padding:22.4px;gap:11.2px"><div class="skeleton" style="height:18px;width:60%"></div><div class="skeleton" style="height:64px;width:40%"></div><div class="skeleton" style="height:14px;width:90%"></div></div>'
@@ -1799,6 +1837,127 @@ function pagoCategoria(p){
 /* ════════════════════════════════════════════════════════════════
    ANÁLISIS
 ════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════
+   PRECIOS — seguimiento del precio del combustible por estación
+════════════════════════════════════════════════════════════════ */
+// pricePerUnit se guarda en canónico ($/L); aquí se pasa a la unidad de volumen activa
+function precioDisplay(r){ return cfg.volUnit==='gal' ? r.pricePerUnit*L_PER_GAL : r.pricePerUnit; }
+
+function renderPrecios(){
+  const el = document.getElementById('precios-body');
+  const conPrecio = records.filter(r=>r.pricePerUnit>0)
+    .sort((a,b)=> (parseTs(a.date)) - (parseTs(b.date)));
+  if(!conPrecio.length){
+    el.innerHTML = emptyState('Registra tanqueos con su precio para seguir cómo se mueve el combustible.');
+    return;
+  }
+
+  const precios = conPrecio.map(precioDisplay);
+  const ultimo = conPrecio[conPrecio.length-1];
+  const precioActual = precioDisplay(ultimo);
+  const promedio = precios.reduce((s,v)=>s+v,0)/precios.length;
+  const minP = Math.min(...precios), maxP = Math.max(...precios);
+  const deltaPct = promedio ? ((precioActual/promedio)-1)*100 : 0;
+  const primero = precioDisplay(conPrecio[0]);
+  const variacionTotal = primero ? ((precioActual/primero)-1)*100 : 0;
+
+  // Agrupación por estación
+  const byEst = {};
+  conPrecio.forEach(r=>{
+    const key = r.estacionId || '__sin__';
+    byEst[key] = byEst[key] || {nombre: r.estacionNombre || 'Sin estación', precios:[], ultimaFecha:null, ultimoPrecio:null, litros:0, costo:0, km:0};
+    const e = byEst[key];
+    e.precios.push(precioDisplay(r));
+    e.litros += r.liters||0;
+    e.costo  += r.totalCost||0;
+    if(r.kmDriven) e.km += r.kmDriven;
+    const f = parseTs(r.date);
+    if(!e.ultimaFecha || f>e.ultimaFecha){ e.ultimaFecha=f; e.ultimoPrecio=precioDisplay(r); }
+  });
+  const filasEst = Object.values(byEst).map(e=>({
+    ...e,
+    prom: e.precios.reduce((s,v)=>s+v,0)/e.precios.length,
+    n: e.precios.length,
+    kmL: e.litros>0 && e.km>0 ? e.km/e.litros : null,
+  })).sort((a,b)=>a.prom-b.prom);
+  const masBarata = filasEst[0];
+
+  const ultimos = conPrecio.slice(-10);
+  const chart = buildLineChart(ultimos.map(precioDisplay));
+  const unidad = volUnitLabel();
+
+  // Conclusión en lenguaje llano
+  let conclusion = '';
+  if(filasEst.length>=2){
+    const cara = filasEst[filasEst.length-1];
+    const dif = cara.prom - masBarata.prom;
+    conclusion = `<b>${masBarata.nombre}</b> te ha salido ${fmt.money(dif)} más barata por ${unidad} que ${cara.nombre}.`;
+    if(masBarata.kmL && cara.kmL){
+      const mejorRinde = masBarata.kmL >= cara.kmL;
+      conclusion += mejorRinde
+        ? ` Y además te rinde más, así que es la mejor opción.`
+        : ` Pero ${cara.nombre} te rinde ${fmt.n(effToDisplay(cara.kmL-masBarata.kmL))} ${effUnitLabel()} más, así que compara antes de decidir.`;
+    }
+  } else if(filasEst.length===1){
+    conclusion = `Todos tus tanqueos son de <b>${masBarata.nombre}</b>. Registra otra estación para poder comparar.`;
+  }
+
+  el.innerHTML = `
+    <div class="view-hdr"><h4>Precio del combustible</h4></div>
+
+    <div class="grid-auto-330">
+      <div class="card elev-sm hero-card">
+        <div class="card-kicker">Último precio pagado</div>
+        <div class="hero-num"><span class="hero-big" style="font-size:44px">${fmt.money(precioActual)}</span><span class="hero-unit">por ${unidad}</span></div>
+        <p class="hero-copy">${fmt.date(ultimo.date)}${ultimo.estacionNombre?' · '+ultimo.estacionNombre:''}.
+          ${Math.abs(deltaPct)<1 ? 'Está en línea con tu promedio.' :
+            `<span class="hl">${deltaPct>0?'Un '+fmt.n(deltaPct,0)+'% por encima':'Un '+fmt.n(Math.abs(deltaPct),0)+'% por debajo'}</span> de tu promedio de ${fmt.money(promedio)}.`}</p>
+        ${chart}
+        <div class="spark-foot"><span>${fmt.dateShort(ultimos[0].date)}</span><span>promedio ${fmt.money(promedio)}</span><span>${fmt.dateShort(ultimo.date)}</span></div>
+      </div>
+
+      <div class="grid-auto-190" style="align-content:start">
+        <div class="card elev-sm stat-cell"><div class="lbl">Más barato que pagaste</div><div class="val">${fmt.money(minP)}</div><div class="ctx">por ${unidad}</div></div>
+        <div class="card elev-sm stat-cell"><div class="lbl">Más caro que pagaste</div><div class="val">${fmt.money(maxP)}</div><div class="ctx">${fmt.money(maxP-minP)} de diferencia</div></div>
+        <div class="card elev-sm stat-cell"><div class="lbl">Promedio histórico</div><div class="val">${fmt.money(promedio)}</div><div class="ctx">${conPrecio.length} tanqueo${conPrecio.length!==1?'s':''}</div></div>
+        <div class="card elev-sm stat-cell"><div class="lbl">Desde tu primer tanqueo</div><div class="val">${variacionTotal>=0?'+':''}${fmt.n(variacionTotal,1)}%</div><div class="ctx">${fmt.money(primero)} → ${fmt.money(precioActual)}</div></div>
+      </div>
+    </div>
+
+    <div class="card elev-sm tbl-card" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
+      <div style="padding:0 22.4px 8.4px">
+        <h5 style="margin:0">Precio por estación</h5>
+        <div style="font-size:13px;color:var(--color-text-dim);margin-top:2.8px">Ordenadas de la más barata a la más cara, con tus propios tanqueos.</div>
+      </div>
+      <div class="tbl-wrap"><table class="table table-stack" style="min-width:620px">
+        <thead><tr><th>Estación</th><th class="num">Último</th><th class="num">Promedio</th><th class="num">Rinde</th><th class="num">Tanqueos</th></tr></thead>
+        <tbody>${filasEst.map((e,i)=>`<tr>
+          <td class="stack-title">${e.nombre} ${i===0&&filasEst.length>1?'<span class="tag tag-accent">más barata</span>':''}
+            <div class="ku" style="color:var(--color-text-dimmer);font-size:11px">último: ${e.ultimaFecha?fmt.dateShort(e.ultimaFecha):'—'}</div></td>
+          <td class="num" data-label="Último">${fmt.money(e.ultimoPrecio)}</td>
+          <td class="num" data-label="Promedio">${fmt.money(e.prom)}</td>
+          <td class="num" data-label="Rinde">${e.kmL?fmt.n(effToDisplay(e.kmL))+' '+effUnitLabel():'—'}</td>
+          <td class="num" data-label="Tanqueos">${e.n}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      ${conclusion?`<div style="padding:11.2px 22.4px 5.6px;font-size:12px;color:var(--color-text-dim);text-wrap:pretty">${conclusion}</div>`:''}
+    </div>
+
+    <div class="card elev-sm tbl-card" style="padding:16.8px 0 5.6px;gap:0;overflow-x:auto">
+      <h5 style="padding:0 22.4px 8.4px">Historial de precios</h5>
+      <div class="tbl-wrap"><table class="table table-stack" style="min-width:560px">
+        <thead><tr><th>Fecha</th><th>Estación</th><th>Combustible</th><th class="num">Precio / ${unidad}</th></tr></thead>
+        <tbody>${[...conPrecio].reverse().slice(0,20).map(r=>`<tr>
+          <td class="stack-title">${fmt.date(r.date)}</td>
+          <td data-label="Estación" style="color:var(--color-text-dim)">${r.estacionNombre||'—'}</td>
+          <td data-label="Combustible" style="color:var(--color-text-dim)">${r.fuelType||'—'}</td>
+          <td class="num" data-label="Precio">${fmt.money(precioDisplay(r))}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+  `;
+}
+
 function renderAnalisis(){
   const el = document.getElementById('analisis-body');
   if(records.length<2){ el.innerHTML = emptyState('Necesitas al menos <strong>2 tanqueos</strong> para ver el análisis.'); return; }
@@ -2306,9 +2465,24 @@ async function deleteViaje(id){
    DIÁLOGOS — accesibilidad (Escape, focus trap, retorno de foco)
 ════════════════════════════════════════════════════════════════ */
 let dialogReturnFocus = {};
+// En iOS el fondo sigue haciendo scroll detrás del modal, así que se congela la posición
+let _scrollLockY = 0;
+function lockScroll(){
+  _scrollLockY = window.scrollY;
+  document.body.style.position='fixed';
+  document.body.style.top = `-${_scrollLockY}px`;
+  document.body.style.width='100%';
+}
+function unlockScroll(){
+  document.body.style.position='';
+  document.body.style.top='';
+  document.body.style.width='';
+  window.scrollTo(0, _scrollLockY);
+}
 function openDialog(id){
   const dlg = document.getElementById(id);
   dialogReturnFocus[id] = document.activeElement;
+  if(!document.querySelector('.dialog-backdrop.open')) lockScroll();
   dlg.classList.add('open');
   const focusables = dlg.querySelectorAll('input,select,textarea,button,[href]');
   if(focusables.length) focusables[0].focus();
@@ -2318,6 +2492,7 @@ function closeDialog(id){
   const dlg = document.getElementById(id);
   dlg.classList.remove('open');
   if(dlg._trapHandler) document.removeEventListener('keydown', dlg._trapHandler);
+  if(!document.querySelector('.dialog-backdrop.open')) unlockScroll();
   const ret = dialogReturnFocus[id] || lastAddOpener;
   if(ret && typeof ret.focus==='function') ret.focus();
 }
